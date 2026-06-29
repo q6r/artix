@@ -460,14 +460,38 @@ impl ProxmoxClient {
 
     /// Set a guest user's password through the guest agent (plain, not crypted).
     pub async fn agent_set_password(&self, vmid: i64, user: &str, password: &str) -> AppResult<()> {
-        let path = format!("/nodes/{}/qemu/{}/agent/set-user-password", self.node, vmid);
-        let form = [
-            ("username", user.to_string()),
-            ("password", password.to_string()),
-            ("crypted", "0".to_string()),
+        // The guest-agent `set-user-password` silently no-ops on some images
+        // (returns success without changing the password), so set it reliably
+        // with `chpasswd`, feeding "user:password" on stdin via `input-data`
+        // (no shell, nothing to escape). Full path because the exec PATH is
+        // minimal and may not include /usr/sbin.
+        let exec_path = format!("/nodes/{}/qemu/{}/agent/exec", self.node, vmid);
+        let form: Vec<(&str, String)> = vec![
+            ("command", "/usr/sbin/chpasswd".to_string()),
+            ("input-data", format!("{user}:{password}\n")),
         ];
-        self.call(Method::POST, &path, Some(&form)).await?;
-        Ok(())
+        let d = self.call(Method::POST, &exec_path, Some(&form)).await?;
+        let pid = d
+            .get("pid")
+            .and_then(|p| p.as_i64())
+            .ok_or_else(|| AppError::Internal("agent set password: no pid".into()))?;
+        let status_path = format!(
+            "/nodes/{}/qemu/{}/agent/exec-status?pid={}",
+            self.node, vmid, pid
+        );
+        for _ in 0..50 {
+            let s = self.call(Method::GET, &status_path, None).await?;
+            if s.get("exited").and_then(|e| e.as_i64()).unwrap_or(0) == 1 {
+                let code = s.get("exitcode").and_then(|c| c.as_i64()).unwrap_or(-1);
+                if code != 0 {
+                    let err = s.get("err-data").and_then(|o| o.as_str()).unwrap_or("").to_string();
+                    return Err(AppError::Internal(format!("chpasswd exit {code}: {err}")));
+                }
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+        Err(AppError::Internal("agent set password timeout".into()))
     }
 
     /// Root-filesystem usage `(used, total)` in bytes via the guest agent.
