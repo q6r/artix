@@ -8,6 +8,7 @@ import FadeIn from "@/components/FadeIn";
 import { useLang } from "@/components/LanguageProvider";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
+import { useConfirm } from "@/components/FeedbackProvider";
 import Skeleton from "@/components/Skeleton";
 import Select from "@/components/Select";
 import { SERVER_PERMS, type OrgDetail, type Server } from "@/lib/api/types";
@@ -16,6 +17,7 @@ type Tab = "servers" | "members" | "permissions";
 
 export default function OrgDetailClient({ id }: { id: string }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const router = useRouter();
   const orgKey = `orgs/${id}`;
   const { data: org, error, loading } = useQuery<OrgDetail>(orgKey);
@@ -42,7 +44,7 @@ export default function OrgDetailClient({ id }: { id: string }) {
   };
 
   const deleteOrg = async () => {
-    if (!confirm(t("org.deleteConfirm"))) return;
+    if (!(await confirm({ title: t("org.deleteConfirm"), confirmLabel: t("common.delete"), danger: true }))) return;
     try {
       await api(`orgs/${id}`, { method: "DELETE" });
       void mutate("orgs");

@@ -14,6 +14,7 @@ import VmFiles from "@/components/servers/VmFiles";
 import MetricChart, { type ChartPoint } from "@/components/servers/MetricChart";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
+import { useConfirm, useToast } from "@/components/FeedbackProvider";
 import type { MetricPoint, Server, ServerState, ServerStat, DedicatedIp } from "@/lib/api/types";
 
 type Tab = "overview" | "metrics" | "files" | "console" | "settings";
@@ -502,6 +503,8 @@ function AccessCard({ server, id }: { server: Server; id: string }) {
   const { t } = useLang();
   const [show, setShow] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const confirm = useConfirm();
+  const toast = useToast();
   const user = server.root_user ?? "root";
   const pass = server.root_password ?? "";
   // Prefer the public relay endpoint; fall back to the internal IP.
@@ -510,14 +513,15 @@ function AccessCard({ server, id }: { server: Server; id: string }) {
   const sshCmd = host ? `ssh ${user}@${host}${port !== 22 ? ` -p ${port}` : ""}` : "";
 
   const reset = async () => {
-    if (resetting || !confirm(t("srv.access.resetConfirm"))) return;
+    if (resetting) return;
+    if (!(await confirm({ title: t("srv.access.resetConfirm"), danger: true }))) return;
     setResetting(true);
     try {
       await api(`servers/${id}/root-password`, { method: "POST", json: {} });
       await mutate(`servers/${id}`);
       setShow(true);
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : t("srv.console.unavailable"));
+      toast(e instanceof ApiError ? e.message : t("srv.console.unavailable"));
     } finally {
       setResetting(false);
     }

@@ -8,6 +8,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { hasAdminAccess, hasSupportAccess } from "@/lib/permissions";
 import Logo from "@/components/Logo";
 import SettingsModal from "@/components/SettingsModal";
+import FeedbackProvider from "@/components/FeedbackProvider";
 import DashboardMobileNav from "@/components/DashboardMobileNav";
 import DashboardIntro from "@/components/DashboardIntro";
 import Tip from "@/components/Tip";
@@ -65,6 +66,7 @@ export default function DashboardLayout({
     }`;
 
   return (
+    <FeedbackProvider>
     <TooltipProvider>
       <div className="flex h-screen overflow-hidden">
         {/* Sidebar */}
@@ -222,5 +224,6 @@ export default function DashboardLayout({
         <DashboardIntro />
       </div>
     </TooltipProvider>
+    </FeedbackProvider>
   );
 }

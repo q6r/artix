@@ -10,6 +10,7 @@ import { useLang } from "@/components/LanguageProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
+import { useConfirm } from "@/components/FeedbackProvider";
 import { hasAdminAccess, granted } from "@/lib/permissions";
 import type {
   TicketCategory,
@@ -439,10 +440,11 @@ function CreateServerForm({
 
 function ServerRow({ server, onEdit }: { server: AdminServer; onEdit: () => void }) {
   const { t, locale } = useLang();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
 
   const remove = async () => {
-    if (!window.confirm(t("admin.servers.confirmDelete"))) return;
+    if (!(await confirm({ title: t("admin.servers.confirmDelete"), confirmLabel: t("common.delete"), danger: true }))) return;
     setBusy(true);
     try {
       await api(`admin/servers/${server.id}`, { method: "DELETE" });
@@ -950,6 +952,7 @@ function PlansPanel() {
 
 function PlanModal({ plan, onClose }: { plan: AdminPlan | null; onClose: () => void }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [slug, setSlug] = useState(plan?.slug ?? "");
   const [name, setName] = useState(plan?.name ?? "");
   const [vcpu, setVcpu] = useState(String(plan?.vcpu ?? 2));
@@ -992,7 +995,8 @@ function PlanModal({ plan, onClose }: { plan: AdminPlan | null; onClose: () => v
   };
 
   const del = async () => {
-    if (!plan || busy || !window.confirm(t("admin.plans.confirmDelete"))) return;
+    if (!plan || busy) return;
+    if (!(await confirm({ title: t("admin.plans.confirmDelete"), confirmLabel: t("common.delete"), danger: true }))) return;
     setBusy(true);
     try {
       await api(`admin/plans/${plan.id}`, { method: "DELETE" });
@@ -1303,6 +1307,7 @@ function AnnouncementEditor({
   onClose: () => void;
 }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [kind, setKind] = useState<string>(item?.kind ?? "banner");
   const [scope, setScope] = useState<string>(item?.scope ?? "global");
   const [pagesText, setPagesText] = useState((item?.pages ?? []).join("\n"));
@@ -1354,7 +1359,7 @@ function AnnouncementEditor({
 
   const remove = async () => {
     if (!item || busy) return;
-    if (!window.confirm(t("admin.announce.confirmDelete"))) return;
+    if (!(await confirm({ title: t("admin.announce.confirmDelete"), confirmLabel: t("common.delete"), danger: true }))) return;
     setBusy(true);
     try {
       await api(`admin/announcements/${item.id}`, { method: "DELETE" });
@@ -1738,6 +1743,7 @@ function RoleEditor({
   onClose: () => void;
 }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [name, setName] = useState(role?.name ?? "");
   const [description, setDescription] = useState(role?.description ?? "");
   const [perms, setPerms] = useState<Set<string>>(new Set(role?.permissions ?? []));
@@ -1784,7 +1790,7 @@ function RoleEditor({
 
   const remove = async () => {
     if (!role || busy) return;
-    if (!window.confirm(t("admin.roles.confirmDelete"))) return;
+    if (!(await confirm({ title: t("admin.roles.confirmDelete"), confirmLabel: t("common.delete"), danger: true }))) return;
     setBusy(true);
     try {
       await api(`admin/roles/${role.id}`, { method: "DELETE" });

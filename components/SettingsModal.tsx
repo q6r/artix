@@ -872,7 +872,7 @@ export default function SettingsModal({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 sm:items-center sm:p-4"
           onClick={onClose}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -883,14 +883,14 @@ export default function SettingsModal({
             role="dialog"
             aria-label={t("dash.settings.title")}
             onClick={(e) => e.stopPropagation()}
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
+            initial={{ opacity: 0, y: "100%" }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: "100%" }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="relative flex h-[min(88vh,760px)] w-[min(96vw,1000px)] overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
+            className="relative flex h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#0a0a0a] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)] sm:h-[min(88vh,760px)] sm:w-[min(96vw,1000px)] sm:flex-row sm:rounded-2xl"
           >
             {/* Sub-sidebar */}
-            <aside className="flex w-[256px] shrink-0 flex-col border-r border-white/10 bg-white/[0.02]">
+            <aside className="hidden w-[256px] shrink-0 flex-col border-r border-white/10 bg-white/[0.02] sm:flex">
               <header className="flex items-center gap-3 px-4 py-4">
                 {user?.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -954,8 +954,31 @@ export default function SettingsModal({
               </footer>
             </aside>
 
+            {/* Mobile section selector (the sidebar is hidden on mobile) */}
+            <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/10 px-3 py-2.5 sm:hidden">
+              {groups
+                .flatMap((g) => g.items)
+                .map((it) => {
+                  const Icon = it.icon;
+                  const isActive = active === it.id;
+                  return (
+                    <button
+                      key={it.id}
+                      type="button"
+                      onClick={() => setActive(it.id)}
+                      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                        isActive ? "bg-white/10 text-white" : "text-white/55 hover:bg-white/5"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" strokeWidth={1.75} />
+                      {t(it.labelKey)}
+                    </button>
+                  );
+                })}
+            </div>
+
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-8">
+            <div className="flex-1 overflow-y-auto p-5 sm:p-8">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={active}

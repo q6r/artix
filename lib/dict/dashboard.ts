@@ -37,6 +37,9 @@ export const dashboard = {
 
     /* ---- Overview page ---- */
     "dash.overview.hello": "Olá",
+    "common.confirm": "Confirmar",
+    "common.cancel": "Cancelar",
+    "common.delete": "Excluir",
     "dash.overview.title": "Visão geral",
     "dash.overview.subtitle": "Aqui está o resumo da sua infraestrutura hoje.",
     "dash.overview.allSystems": "Todos os sistemas operacionais",
@@ -422,6 +425,9 @@ export const dashboard = {
     "dash.roleDesc.Somente leitura": "Only views resources and metrics.",
 
     "dash.overview.hello": "Hi",
+    "common.confirm": "Confirm",
+    "common.cancel": "Cancel",
+    "common.delete": "Delete",
     "dash.overview.title": "Overview",
     "dash.overview.subtitle": "Here is a summary of your infrastructure today.",
     "dash.overview.allSystems": "All systems operational",
@@ -796,6 +802,9 @@ export const dashboard = {
     "dash.roleDesc.Somente leitura": "Solo visualiza recursos y métricas.",
 
     "dash.overview.hello": "Hola",
+    "common.confirm": "Confirmar",
+    "common.cancel": "Cancelar",
+    "common.delete": "Eliminar",
     "dash.overview.title": "Visión general",
     "dash.overview.subtitle": "Aquí está el resumen de tu infraestructura hoy.",
     "dash.overview.allSystems": "Todos los sistemas operativos",

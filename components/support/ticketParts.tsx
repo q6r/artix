@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Headset, Send, UserPlus, X } from "lucide-react";
 import { useLang } from "@/components/LanguageProvider";
 import { useAuth } from "@/components/AuthProvider";
+import { useToast } from "@/components/FeedbackProvider";
 import { api, ApiError } from "@/lib/api/client";
 import type { TicketThread, UserRef } from "@/lib/api/types";
 
@@ -69,6 +70,7 @@ export function useTicket(
   onAfterChange?: () => void,
 ) {
   const { user } = useAuth();
+  const toast = useToast();
   const [thread, setThread] = useState<TicketThread | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">(
     id ? "loading" : "idle",
@@ -121,7 +123,7 @@ export function useTicket(
       await reload();
       onAfterChange?.();
     } catch (err) {
-      if (err instanceof ApiError) alert(err.message);
+      if (err instanceof ApiError) toast(err.message);
       throw err;
     } finally {
       setBusy(false);
@@ -135,7 +137,7 @@ export function useTicket(
       await reload();
       onAfterChange?.();
     } catch (err) {
-      if (err instanceof ApiError) alert(err.message);
+      if (err instanceof ApiError) toast(err.message);
     } finally {
       setActionBusy(false);
     }
