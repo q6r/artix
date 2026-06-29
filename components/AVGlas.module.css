@@ -1,0 +1,156 @@
+.wrap {
+    width: 100%;
+    min-height: 100vh;
+    background: #000;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  
+  .svg {
+    width: min(720px, 92vw);
+    height: auto;
+    display: block;
+  }
+  
+  .logo {
+    transform-origin: center;
+    animation: logoBreath 4.56s ease-in-out infinite;
+  }
+  
+  .seg {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  
+  .shadow {
+    stroke: #07090f;
+    stroke-width: 8;
+    opacity: 0.95;
+    filter: blur(1.6px);
+  }
+  
+  .body {
+    stroke: url("#av-body");
+    stroke-width: 3.2;
+    opacity: 0.58;
+    animation: bodyPulse 4.56s ease-in-out infinite;
+  }
+  
+  .edge {
+    stroke: rgba(255, 255, 255, 0.55);
+    stroke-width: 1.05;
+    opacity: 0.75;
+  }
+  
+  .rgbRed {
+    stroke: #ff5d58;
+    stroke-width: 1.25;
+    opacity: 0.28;
+    transform: translateX(-1.1px);
+    mix-blend-mode: screen;
+  }
+  
+  .rgbBlue {
+    stroke: #6fa7ff;
+    stroke-width: 1.25;
+    opacity: 0.32;
+    transform: translateX(1.1px);
+    mix-blend-mode: screen;
+  }
+  
+  .screen {
+    mix-blend-mode: screen;
+  }
+  
+  .hot {
+    stroke: url("#av-hot");
+    stroke-width: 4;
+    opacity: 0.95;
+    mix-blend-mode: screen;
+  }
+  
+  .hotA {
+    stroke-dasharray: 34 210;
+    stroke-dashoffset: 0;
+    animation: lightTravel 4.56s linear infinite;
+  }
+  
+  .hotB {
+    stroke-dasharray: 16 240;
+    stroke-dashoffset: 120;
+    opacity: 0.72;
+    animation: lightTravelFast 3.2s linear infinite;
+  }
+  
+  .prism {
+    stroke: url("#av-prism");
+    stroke-width: 2.6;
+    opacity: 0.8;
+    stroke-dasharray: 22 250;
+    stroke-dashoffset: 60;
+    animation: prismTravel 2.85s linear infinite;
+  }
+  
+  .spark {
+    opacity: 0.95;
+    mix-blend-mode: screen;
+  }
+  
+  @keyframes lightTravel {
+    from {
+      stroke-dashoffset: 0;
+    }
+  
+    to {
+      stroke-dashoffset: -420;
+    }
+  }
+  
+  @keyframes lightTravelFast {
+    from {
+      stroke-dashoffset: 160;
+    }
+  
+    to {
+      stroke-dashoffset: -360;
+    }
+  }
+  
+  @keyframes prismTravel {
+    from {
+      stroke-dashoffset: 90;
+    }
+  
+    to {
+      stroke-dashoffset: -330;
+    }
+  }
+  
+  @keyframes bodyPulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+  
+    45% {
+      opacity: 0.72;
+    }
+  
+    70% {
+      opacity: 0.38;
+    }
+  }
+  
+  @keyframes logoBreath {
+    0%,
+    100% {
+      opacity: 0.92;
+    }
+  
+    50% {
+      opacity: 1;
+    }
+  }

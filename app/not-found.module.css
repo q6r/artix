@@ -1,0 +1,98 @@
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #111;
+  overflow: hidden;
+  padding: 24px;
+}
+
+.wrapper {
+  width: min(920px, 96vw);
+  text-align: center;
+  transform: translateY(-3vh);
+}
+
+.art {
+  width: 100%;
+  max-width: 760px;
+  height: auto;
+  overflow: visible;
+}
+
+.code,
+.bleed {
+  font-family: Impact, "Haettenschweiler", "Arial Narrow Bold", "Arial Black", sans-serif;
+  font-size: 250px;
+  font-weight: 900;
+  letter-spacing: 14px;
+}
+
+.code {
+  fill: #0a0a0a;
+}
+
+.bleed {
+  fill: #000;
+  opacity: 0.18;
+}
+
+.dust {
+  fill: #111;
+  opacity: 0.85;
+}
+
+/* Watercolor washes multiply onto the painted texture below them. */
+.wash {
+  mix-blend-mode: multiply;
+}
+
+.title {
+  margin: -28px 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #2a2a2a;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: #c8c8c8;
+}
+
+.home {
+  display: inline-block;
+  margin-top: 28px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #555;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.home:hover {
+  color: #000;
+  border-color: #000;
+}
+
+/* The whole SVG scales via its viewBox (width:100%), so the inner geometry —
+   and the moon's alignment with the 0 — stays fixed across screen sizes. */
+@media (max-width: 600px) {
+  .wrapper {
+    transform: translateY(-1vh);
+  }
+
+  .title {
+    margin-top: -12px;
+    font-size: 12px;
+  }
+
+  .home {
+    margin-top: 20px;
+  }
+}
