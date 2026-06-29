@@ -6,6 +6,7 @@
 // are not reachable from JS (XSS can't exfiltrate them).
 
 import { cookies } from "next/headers";
+import type { User } from "@/lib/api/types";
 
 export const AT_COOKIE = "artix_at";
 export const RT_COOKIE = "artix_rt";
@@ -135,4 +136,22 @@ export async function proxyToBackend(request: Request, path: string): Promise<Re
     status: res.status,
     headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
   });
+}
+
+/**
+ * Server-only: resolve the current user from the access-token cookie WITHOUT
+ * refreshing (server components can't write cookies). `expired` tells the caller
+ * to bounce through a client-side refresh. Used to hard-gate staff pages so the
+ * UI is never even rendered for unauthorized users.
+ */
+export async function getMe(): Promise<{ user: User | null; expired: boolean }> {
+  const jar = await cookies();
+  const access = jar.get(AT_COOKIE)?.value;
+  if (!access) return { user: null, expired: true };
+  const res = await backendFetch("/auth/me", {
+    headers: { authorization: `Bearer ${access}` },
+  });
+  if (res.status === 401) return { user: null, expired: true };
+  if (!res.ok) return { user: null, expired: false };
+  return { user: (await res.json()) as User, expired: false };
 }
