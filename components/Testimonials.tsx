@@ -19,25 +19,25 @@ const testimonials: Testimonial[] = [
   {
     quote: "home.testimonials.q2",
     name: "clash",
-    role: "home.testimonials.role2",
+    role: "home.testimonials.role3",
     avatar: "https://cdn.discordapp.com/avatars/1053167468832636949/a_17d3f92a8425e4a26797d69e60b210a1.png?size=128",
   },
   {
     quote: "home.testimonials.q3",
     name: "indra",
-    role: "home.testimonials.role3",
+    role: "home.testimonials.role4",
     avatar: "https://cdn.discordapp.com/avatars/1289607530586312715/d00732aa5ec7690e6844493bd4addb37.png?size=128",
   },
   {
     quote: "home.testimonials.q4",
     name: "drg",
-    role: "home.testimonials.role4",
+    role: "home.testimonials.role5",
     avatar: "https://cdn.discordapp.com/avatars/439443452107816963/7003c00fffcf35199ca66b011ffc4106.png?size=128",
   },
   {
     quote: "home.testimonials.q5",
     name: "Kurt Cobain",
-    role: "home.testimonials.role5",
+    role: "home.testimonials.role6",
     avatar: "https://cdn.discordapp.com/avatars/1044800961618661386/0f0466ef590732c75c4106032ff9d6f3.png?size=128",
   },
   {
