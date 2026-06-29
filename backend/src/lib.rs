@@ -9,6 +9,7 @@ pub mod error;
 pub mod frp;
 pub mod handlers;
 pub mod stripe;
+pub mod notify;
 pub mod headers;
 pub mod models;
 pub mod oauth;
@@ -266,6 +267,8 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::keys::list).post(handlers::keys::create),
         )
         .route("/keys/:id", delete(handlers::keys::revoke))
+        .route("/notifications", get(handlers::notifications::list))
+        .route("/notifications/read", post(handlers::notifications::mark_read))
         .nest("/v1", dev_routes)
         // Billing (subscriptions + invoices + PIX).
         .route("/billing/plans", get(handlers::billing::list_plans))

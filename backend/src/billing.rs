@@ -555,6 +555,7 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
         if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
             email::send_payment_confirmed(state, &user, invoice).await;
         }
+        crate::notify::notify(state, sub.user_id, "dedicated_ip", "Pagamento confirmado", "Seu IP dedicado está sendo encaminhado.", Some("/dashboard/billing".into())).await;
         let invoice_id = invoice.id.unwrap_or_default().to_hex();
         crate::ws::publish(
             state,
@@ -600,6 +601,7 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
     if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
         email::send_payment_confirmed(state, &user, invoice).await;
     }
+    crate::notify::notify(state, sub.user_id, "payment", "Pagamento confirmado", "Sua assinatura está ativa e sua VPS está sendo preparada.", Some("/dashboard/servers".into())).await;
 
     // Push to any socket watching this invoice (replaces client polling).
     let invoice_id = invoice.id.unwrap_or_default().to_hex();

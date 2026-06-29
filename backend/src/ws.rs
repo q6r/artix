@@ -213,6 +213,9 @@ async fn owns_topic(state: &AppState, user_id: ObjectId, topic: &str) -> bool {
             .flatten()
             .is_some();
     }
+    if let Some(id) = topic.strip_prefix("user:") {
+        return id == user_id.to_hex();
+    }
     false
 }
 

@@ -100,6 +100,21 @@ export type Checkout = {
   invoice: Invoice;
 };
 
+export type Notification = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  read: boolean;
+  link?: string | null;
+  created_at: string;
+};
+
+export type NotificationsResponse = {
+  items: Notification[];
+  unread: number;
+};
+
 export type ServerState =
   | "pending_payment"
   | "provisioning"

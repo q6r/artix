@@ -139,5 +139,16 @@ pub async fn admin_assign(
     if res.matched_count == 0 {
         return Err(AppError::NotFound);
     }
+    if let Ok(Some(dip)) = state.db.dedicated_ips().find_one(doc! { "_id": oid }).await {
+        crate::notify::notify(
+            &state,
+            dip.user_id,
+            "dedicated_ip",
+            "IP dedicado encaminhado",
+            format!("Seu IP dedicado {ip} já está disponível."),
+            Some(format!("/dashboard/servers/{}", dip.server_id.to_hex())),
+        )
+        .await;
+    }
     Ok(Json(serde_json::json!({ "ok": true })))
 }

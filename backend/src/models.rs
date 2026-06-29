@@ -996,3 +996,46 @@ impl DedicatedIp {
         }
     }
 }
+
+/// collection: `notifications` — in-app dashboard notifications (the bell).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notification {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub user_id: ObjectId,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    #[serde(default)]
+    pub read: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NotificationPublic {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub read: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl Notification {
+    pub fn public(&self) -> NotificationPublic {
+        NotificationPublic {
+            id: self.id.map(|o| o.to_hex()).unwrap_or_default(),
+            kind: self.kind.clone(),
+            title: self.title.clone(),
+            body: self.body.clone(),
+            read: self.read,
+            link: self.link.clone(),
+            created_at: self.created_at,
+        }
+    }
+}

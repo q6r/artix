@@ -21,7 +21,7 @@ import OrgsIcon from "@/components/icons/OrgsIcon";
 import AdminIcon from "@/components/icons/AdminIcon";
 import TicketsIcon from "@/components/icons/TicketsIcon";
 import { Settings } from "@/components/animate-ui/icons/settings";
-import { Bell } from "@/components/animate-ui/icons/bell";
+import NotificationsBell from "@/components/NotificationsBell";
 import { Plus } from "@/components/animate-ui/icons/plus";
 import { LogOut } from "@/components/animate-ui/icons/log-out";
 
@@ -190,14 +190,7 @@ export default function DashboardLayout({
             </div>
 
             <div className="flex items-center gap-3">
-              <Tip label={t("dash.notifications")} side="bottom">
-                <button
-                  aria-label={t("dash.notifications")}
-                  className="group flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/70 transition-colors hover:text-white"
-                >
-                  <Bell size={16} animateOnHover />
-                </button>
-              </Tip>
+              <NotificationsBell />
               <Link
                 href="/dashboard/servers/new"
                 className="group flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85"

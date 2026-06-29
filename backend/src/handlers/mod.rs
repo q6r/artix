@@ -11,6 +11,7 @@ pub mod dedicated_ip;
 pub mod dev;
 pub mod health;
 pub mod keys;
+pub mod notifications;
 pub mod oauth;
 pub mod orgs;
 pub mod servers;
