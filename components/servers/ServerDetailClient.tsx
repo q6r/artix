@@ -15,6 +15,16 @@ import MetricChart, { type ChartPoint } from "@/components/servers/MetricChart";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
 import { useConfirm, useToast } from "@/components/FeedbackProvider";
+import Select from "@/components/Select";
+
+// OS labels that map to a provisioning template (mirror of OS_TEMPLATES).
+const OS_OPTIONS = [
+  "Ubuntu 24.04 LTS",
+  "Ubuntu 22.04 LTS",
+  "Debian 12",
+  "AlmaLinux 9",
+  "Rocky Linux 9",
+];
 import type { MetricPoint, Server, ServerState, ServerStat, DedicatedIp } from "@/lib/api/types";
 
 type Tab = "overview" | "metrics" | "files" | "console" | "settings";
@@ -101,6 +111,7 @@ export default function ServerDetailClient({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [busy, setBusy] = useState(false);
   const [formatConfirm, setFormatConfirm] = useState(false);
+  const [formatOs, setFormatOs] = useState("");
   const [actionErr, setActionErr] = useState<string | null>(null);
 
   // Live status over the gateway socket (no refetch needed).
@@ -132,7 +143,7 @@ export default function ServerDetailClient({ id }: { id: string }) {
     setBusy(true);
     setActionErr(null);
     try {
-      await api(`servers/${id}/reinstall`, { method: "POST" });
+      await api(`servers/${id}/reinstall`, { method: "POST", json: { os: formatOs || undefined } });
       setFormatConfirm(false);
       void mutate(`servers/${id}`);
     } catch (err) {
@@ -229,6 +240,16 @@ export default function ServerDetailClient({ id }: { id: string }) {
           <p className="mt-1 text-sm text-white/55">{t("srv.format.desc")}</p>
           {actionErr && <p className="mt-2 text-sm text-red-300">{actionErr}</p>}
           {formatConfirm ? (
+            <>
+            <div className="mt-4 flex flex-col gap-2">
+              <span className="text-sm font-medium text-white/70">{t("srv.format.osLabel")}</span>
+              <Select
+                value={formatOs}
+                onChange={setFormatOs}
+                className="h-10 px-3 text-sm sm:max-w-xs"
+                options={OS_OPTIONS.map((o) => ({ value: o, label: o }))}
+              />
+            </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="text-sm text-white/70">{t("srv.format.confirm")}</span>
               <button
@@ -247,10 +268,12 @@ export default function ServerDetailClient({ id }: { id: string }) {
                 {busy ? t("srv.format.formatting") : t("srv.format.action")}
               </button>
             </div>
+            </>
           ) : (
             <button
               onClick={() => {
                 setActionErr(null);
+                setFormatOs(server.os);
                 setFormatConfirm(true);
               }}
               disabled={!provisioned || busy}

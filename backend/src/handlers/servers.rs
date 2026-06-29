@@ -378,16 +378,36 @@ pub struct RootPasswordReq {
 /// Format (reinstall) a VPS: tear down the current VM and reprovision a fresh
 /// one from the template — same server record, wiped disk, new root password.
 /// Users can format but NOT destroy; destruction is admin-only.
+#[derive(serde::Deserialize)]
+pub struct ReinstallReq {
+    /// Optional new OS to install (must be a known `OS_TEMPLATES` label).
+    #[serde(default)]
+    pub os: Option<String>,
+}
+
 pub async fn reinstall(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<String>,
+    Json(req): Json<ReinstallReq>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
+    let mut server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let px = state
         .proxmox
         .as_ref()
         .ok_or_else(|| AppError::Unavailable("provisioning unavailable".into()))?;
+
+    // Reinstall onto a different OS, when a known template label is supplied.
+    if let Some(os) = req.os.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if os != server.os && state.cfg.os_templates.contains_key(os) {
+            let _ = state
+                .db
+                .servers()
+                .update_one(doc! { "_id": server.id }, doc! { "$set": { "os": os }})
+                .await;
+            server.os = os.to_string();
+        }
+    }
 
     // Tear down the existing VM (best-effort) and clear its captured IP.
     if let Some(vmid) = server.vmid {
