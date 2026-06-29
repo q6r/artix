@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Power, RotateCw, Play, Eye, EyeOff, Copy, Check } from "lucide-react";
 import FadeIn from "@/components/FadeIn";
@@ -13,7 +14,7 @@ import VmFiles from "@/components/servers/VmFiles";
 import MetricChart, { type ChartPoint } from "@/components/servers/MetricChart";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
-import type { MetricPoint, Server, ServerState, ServerStat } from "@/lib/api/types";
+import type { MetricPoint, Server, ServerState, ServerStat, DedicatedIp } from "@/lib/api/types";
 
 type Tab = "overview" | "metrics" | "files" | "console" | "settings";
 
@@ -314,6 +315,8 @@ function Overview({
 
       {server.vmid != null && <AccessCard server={server} id={server.id} />}
 
+      {server.vmid != null && <DedicatedIpCard id={server.id} />}
+
       {ramPct != null && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
           <div className="flex items-center justify-between text-sm">
@@ -379,6 +382,119 @@ function CopyButton({ value }: { value: string }) {
     >
       {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
     </button>
+  );
+}
+
+function DedicatedIpCard({ id }: { id: string }) {
+  const { t } = useLang();
+  const router = useRouter();
+  const { data: dip } = useQuery<DedicatedIp | null>(`servers/${id}/dedicated-ip`);
+  const [method, setMethod] = useState<"crypto" | "pix" | "stripe">("crypto");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const buy = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const inv = await api<{ id: string }>(`servers/${id}/dedicated-ip`, {
+        method: "POST",
+        json: { method },
+      });
+      router.push(`/dashboard/billing/${inv.id}`);
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  if (dip?.status === "active" && dip.ip_address) {
+    return (
+      <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] p-5">
+        <p className="text-sm font-medium">{t("srv.dip.title")}</p>
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+          <span className="font-mono text-sm">{dip.ip_address}</span>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(dip.ip_address!);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            className="text-white/50 transition-colors hover:text-white"
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (dip?.status === "pending_assignment") {
+    return (
+      <div className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-5">
+        <p className="text-sm font-medium">{t("srv.dip.title")}</p>
+        <p className="mt-1 flex items-center gap-2 text-sm text-amber-200/90">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+          {t("srv.dip.routing")}
+        </p>
+      </div>
+    );
+  }
+
+  if (dip?.status === "pending_payment") {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <p className="text-sm font-medium">{t("srv.dip.title")}</p>
+        <p className="mt-1 text-sm text-white/55">{t("srv.dip.pendingPay")}</p>
+        <Link
+          href="/dashboard/billing"
+          className="mt-3 inline-flex h-9 items-center rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85"
+        >
+          {t("srv.dip.goPay")}
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">{t("srv.dip.title")}</p>
+          <p className="mt-1 text-sm text-white/55">{t("srv.dip.desc")}</p>
+        </div>
+        <span className="shrink-0 text-right">
+          <span className="text-2xl font-semibold tracking-tight">R$ 25</span>
+          <span className="text-xs text-white/45">{t("bill.perMonth")}</span>
+        </span>
+      </div>
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="grid flex-1 grid-cols-3 gap-2">
+          {(["crypto", "pix", "stripe"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMethod(m)}
+              className={`rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
+                method === m
+                  ? "border-white bg-white/10 text-white"
+                  : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/[0.06]"
+              }`}
+            >
+              {t(`bill.method.${m === "stripe" ? "card" : m}`)}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={buy}
+          disabled={busy}
+          className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-white px-5 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
+        >
+          {busy ? "…" : t("srv.dip.buy")}
+        </button>
+      </div>
+    </div>
   );
 }
 

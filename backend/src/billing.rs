@@ -540,6 +540,31 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
         .find_one(doc! { "_id": invoice.subscription_id })
         .await?;
     let Some(sub) = sub else { return Ok(()) };
+
+    // Dedicated-IP add-on: no VM to provision. Flag the order for the admin to
+    // route the IP, confirm by email + socket, and we're done.
+    if sub.plan == "dedicated-ip" {
+        let _ = state
+            .db
+            .dedicated_ips()
+            .update_one(
+                doc! { "subscription_id": sub.id },
+                doc! { "$set": { "status": "pending_assignment", "updated_at": bson::DateTime::from_chrono(now) }},
+            )
+            .await;
+        if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+            email::send_payment_confirmed(state, &user, invoice).await;
+        }
+        let invoice_id = invoice.id.unwrap_or_default().to_hex();
+        crate::ws::publish(
+            state,
+            format!("invoice:{invoice_id}"),
+            "paid",
+            serde_json::to_value(invoice.public()).unwrap_or_default(),
+        );
+        return Ok(());
+    }
+
     let Some(server_id) = sub.server_id else { return Ok(()) };
     let Some(server) = state.db.servers().find_one(doc! { "_id": server_id }).await? else {
         return Ok(());
@@ -891,6 +916,93 @@ pub fn spawn_worker(state: AppState) {
         }
     });
     tracing::info!("billing worker started");
+}
+
+/// Price of the dedicated-IP add-on (R$25/mo).
+pub const DEDICATED_IP_PRICE_CENTS: i64 = 2500;
+
+/// Buy a dedicated IP for a VPS: a monthly subscription with NO server_id (so
+/// the billing engine never provisions a VM) marked `plan = "dedicated-ip"`,
+/// plus a `dedicated_ips` order and the first invoice. The admin routes the IP
+/// once paid. Returns the order + invoice to pay.
+pub async fn create_dedicated_ip(
+    state: &AppState,
+    user: &User,
+    server_id: bson::oid::ObjectId,
+    method: Option<String>,
+) -> AppResult<(crate::models::DedicatedIp, Invoice)> {
+    let method = method.unwrap_or_else(|| "crypto".into());
+    match method.as_str() {
+        "crypto" if state.crypto.is_none() => return Err(AppError::Unavailable("crypto billing unavailable".into())),
+        "pix" if state.pagci.is_none() => return Err(AppError::Unavailable("pix billing unavailable".into())),
+        "stripe" if state.stripe.is_none() => return Err(AppError::Unavailable("stripe billing unavailable".into())),
+        "crypto" | "pix" | "stripe" => {}
+        _ => return Err(AppError::Validation("unknown payment method".into())),
+    }
+    let user_id = user.id.ok_or(AppError::Unauthorized)?;
+    let now = Utc::now();
+    let price_cents = DEDICATED_IP_PRICE_CENTS;
+
+    // One non-cancelled dedicated IP per VPS.
+    if state
+        .db
+        .dedicated_ips()
+        .find_one(doc! { "server_id": server_id, "status": { "$ne": "cancelled" } })
+        .await?
+        .is_some()
+    {
+        return Err(AppError::Conflict("this VPS already has a dedicated IP".into()));
+    }
+
+    let mut subscription = Subscription {
+        id: None,
+        user_id,
+        server_id: None,
+        plan: "dedicated-ip".into(),
+        status: SubscriptionStatus::PendingPayment,
+        price_cents,
+        currency: state.cfg.billing_currency.clone(),
+        interval: "monthly".into(),
+        provider: Some(method.clone()),
+        current_period_start: None,
+        current_period_end: None,
+        cancel_at_period_end: false,
+        created_at: now,
+        updated_at: now,
+    };
+    subscription.id = state
+        .db
+        .subscriptions()
+        .insert_one(&subscription)
+        .await?
+        .inserted_id
+        .as_object_id();
+
+    let mut dip = crate::models::DedicatedIp {
+        id: None,
+        user_id,
+        server_id,
+        subscription_id: subscription.id,
+        status: crate::models::DedicatedIpStatus::PendingPayment,
+        ip_address: None,
+        price_cents,
+        assigned_at: None,
+        created_at: now,
+        updated_at: now,
+    };
+    dip.id = state
+        .db
+        .dedicated_ips()
+        .insert_one(&dip)
+        .await?
+        .inserted_id
+        .as_object_id();
+
+    let period_start = now;
+    let period_end = add_months(now, 1);
+    let invoice = build_invoice(state, user_id, subscription.id.unwrap(), price_cents, period_start, period_end, now);
+    let invoice = persist_and_charge(state, user, invoice, &method).await?;
+    Ok((dip, invoice))
 }
 
 #[cfg(test)]

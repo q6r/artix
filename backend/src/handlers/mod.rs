@@ -7,6 +7,7 @@ pub mod auth;
 pub mod avatar;
 pub mod backup;
 pub mod billing;
+pub mod dedicated_ip;
 pub mod dev;
 pub mod health;
 pub mod keys;

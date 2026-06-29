@@ -152,6 +152,8 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/relays", get(handlers::admin_relays::list))
         .route("/relays/:name", patch(handlers::admin_relays::set_enabled))
+        .route("/dedicated-ips", get(handlers::dedicated_ip::admin_list))
+        .route("/dedicated-ips/:id", patch(handlers::dedicated_ip::admin_assign))
         .route("/subscriptions", get(handlers::billing::admin_list_subscriptions))
         .route("/invoices", get(handlers::billing::admin_list_invoices))
         .route("/invoices/:id/mark-paid", post(handlers::billing::admin_mark_paid))
@@ -255,6 +257,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/servers/:id/files/move", post(handlers::vm_agent::mv))
         .route("/servers/:id/exec", post(handlers::vm_agent::console_exec))
         .route("/servers/:id/disk", get(handlers::vm_agent::disk_usage))
+        .route(
+            "/servers/:id/dedicated-ip",
+            get(handlers::dedicated_ip::get).post(handlers::dedicated_ip::buy),
+        )
         .route(
             "/keys",
             get(handlers::keys::list).post(handlers::keys::create),

@@ -17,6 +17,7 @@ import type {
   AdminUser,
   AdminServer,
   AdminRelay,
+  AdminDedicatedIp,
   AdminPlan,
   Plan,
   PlansResponse,
@@ -31,6 +32,7 @@ import type {
 type Tab =
   | "servers"
   | "relays"
+  | "dedipips"
   | "plans"
   | "finance"
   | "categories"
@@ -56,6 +58,7 @@ export default function AdminClient() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "servers", label: t("admin.tab.servers") },
     { id: "relays", label: t("admin.tab.relays") },
+    { id: "dedipips", label: t("admin.tab.dedipips") },
     { id: "plans", label: t("admin.tab.plans") },
     { id: "finance", label: t("admin.tab.finance") },
     { id: "categories", label: t("admin.tab.categories") },
@@ -90,6 +93,7 @@ export default function AdminClient() {
 
       {tab === "servers" && <ServersPanel />}
       {tab === "relays" && <RelaysPanel />}
+      {tab === "dedipips" && <DedicatedIpsPanel />}
       {tab === "plans" && <PlansPanel />}
       {tab === "finance" && <FinancePanel />}
       {tab === "categories" && <CategoriesPanel />}
@@ -682,6 +686,111 @@ function ServerEditModal({
       </motion.div>
     </motion.div>,
     document.body,
+  );
+}
+
+// ----------------------------- Dedicated IPs -----------------------------
+
+function DipStatusBadge({ status, ip }: { status: string; ip?: string | null }) {
+  const { t } = useLang();
+  const cls: Record<string, string> = {
+    pending_payment: "bg-white/10 text-white/55",
+    pending_assignment: "bg-amber-500/15 text-amber-300",
+    active: "bg-emerald-500/15 text-emerald-300",
+    cancelled: "bg-white/10 text-white/40",
+  };
+  return (
+    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${cls[status] ?? "bg-white/10"}`}>
+      {t(`admin.dip.status.${status}`)}
+      {status === "active" && ip ? ` \u00b7 ${ip}` : ""}
+    </span>
+  );
+}
+
+function DedicatedIpsPanel() {
+  const { t } = useLang();
+  const { data: ips, error, loading } = useQuery<AdminDedicatedIp[]>("admin/dedicated-ips");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [ipInput, setIpInput] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const assign = async (id: string) => {
+    if (busy || !ipInput.trim()) return;
+    setBusy(true);
+    try {
+      await api(`admin/dedicated-ips/${id}`, { method: "PATCH", json: { ip_address: ipInput.trim() } });
+      await mutate("admin/dedicated-ips");
+      setEditing(null);
+      setIpInput("");
+    } catch {
+      /* surfaced on next load */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) return <div className="h-24 animate-pulse rounded-2xl border border-white/10 bg-white/[0.02]" />;
+  if (error) return <p className="text-sm text-red-300">{t("admin.error")}</p>;
+
+  return (
+    <FadeIn className="space-y-3">
+      <p className="text-sm text-white/55">{t("admin.dip.desc")}</p>
+      <div className="space-y-2">
+        {(ips ?? []).map((d) => (
+          <div key={d.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {d.owner?.display_name ?? "\u2014"}{" "}
+                  <span className="text-white/45">{d.owner?.email}</span>
+                </p>
+                <p className="mt-0.5 truncate text-xs text-white/45">VPS: {d.server_name ?? d.server_id}</p>
+              </div>
+              <DipStatusBadge status={d.status} ip={d.ip_address} />
+            </div>
+            {d.status === "pending_assignment" &&
+              (editing === d.id ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <input
+                    autoFocus
+                    value={ipInput}
+                    onChange={(e) => setIpInput(e.target.value)}
+                    placeholder="ex: 191.252.202.4"
+                    className="h-9 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-white/30"
+                  />
+                  <button
+                    onClick={() => assign(d.id)}
+                    disabled={busy}
+                    className="h-9 rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
+                  >
+                    {t("admin.dip.assign")}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditing(null);
+                      setIpInput("");
+                    }}
+                    className="h-9 rounded-xl border border-white/10 px-3 text-sm text-white/60 transition-colors hover:bg-white/5"
+                  >
+                    {t("admin.servers.cancel")}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setEditing(d.id);
+                    setIpInput("");
+                  }}
+                  className="mt-3 inline-flex h-9 items-center rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85"
+                >
+                  {t("admin.dip.route")}
+                </button>
+              ))}
+          </div>
+        ))}
+        {(ips ?? []).length === 0 && <p className="text-sm text-white/45">{t("admin.dip.empty")}</p>}
+      </div>
+    </FadeIn>
   );
 }
 

@@ -942,3 +942,57 @@ pub struct RelaySetting {
     pub name: String,
     pub enabled: bool,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DedicatedIpStatus {
+    PendingPayment,
+    PendingAssignment,
+    Active,
+    Cancelled,
+}
+
+/// collection: `dedicated_ips` — a paid add-on for a VPS. The admin manually
+/// routes (assigns) the IP after payment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DedicatedIp {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub user_id: ObjectId,
+    pub server_id: ObjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_id: Option<ObjectId>,
+    pub status: DedicatedIpStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_address: Option<String>,
+    pub price_cents: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
+    pub assigned_at: Option<DateTime<Utc>>,
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DedicatedIpPublic {
+    pub id: String,
+    pub server_id: String,
+    pub status: DedicatedIpStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_address: Option<String>,
+    pub price_cents: i64,
+}
+
+impl DedicatedIp {
+    pub fn public(&self) -> DedicatedIpPublic {
+        DedicatedIpPublic {
+            id: self.id.map(|o| o.to_hex()).unwrap_or_default(),
+            server_id: self.server_id.to_hex(),
+            status: self.status,
+            ip_address: self.ip_address.clone(),
+            price_cents: self.price_cents,
+        }
+    }
+}

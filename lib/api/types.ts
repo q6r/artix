@@ -136,6 +136,25 @@ export type AdminServer = Server & {
 };
 
 /** A configured frp relay as seen in the admin panel. */
+export type DedicatedIpStatus =
+  | "pending_payment"
+  | "pending_assignment"
+  | "active"
+  | "cancelled";
+
+export type DedicatedIp = {
+  id: string;
+  server_id: string;
+  status: DedicatedIpStatus;
+  ip_address?: string | null;
+  price_cents: number;
+};
+
+export type AdminDedicatedIp = DedicatedIp & {
+  owner: UserRef | null;
+  server_name?: string | null;
+};
+
 export type AdminRelay = {
   name: string;
   host: string;
