@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import FadeIn from "@/components/FadeIn";
 import RowMenu from "@/components/RowMenu";
+import Sheet from "@/components/ui/Sheet";
 import { useLang } from "@/components/LanguageProvider";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
@@ -428,86 +429,6 @@ export default function VmFiles({ id }: { id: string }) {
             </AnimatePresence>
 
             <AnimatePresence>
-              {dialog && (
-                <motion.div
-                  key="dialog"
-                  {...backdrop}
-                  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
-                  onClick={() => setDialog(null)}
-                >
-                  <motion.div
-                    {...card}
-                    onClick={(ev) => ev.stopPropagation()}
-                    className="w-full max-w-sm rounded-2xl border border-white/10 bg-neutral-950 p-5 shadow-2xl"
-                  >
-                    <p className="text-sm font-semibold">{t(`srv.files.${dialog.mode}`)}</p>
-                    <input
-                      autoFocus
-                      value={dialog.value}
-                      onChange={(ev) => setDialog({ ...dialog, value: ev.target.value })}
-                      onKeyDown={(ev) => ev.key === "Enter" && submitDialog()}
-                      spellCheck={false}
-                      className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 font-mono text-sm outline-none focus:border-white/30"
-                    />
-                    <div className="mt-4 flex justify-end gap-2">
-                      <button
-                        onClick={() => setDialog(null)}
-                        className="inline-flex h-9 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5"
-                      >
-                        {t("srv.files.cancel")}
-                      </button>
-                      <button
-                        onClick={submitDialog}
-                        disabled={busy || !dialog.value.trim()}
-                        className="inline-flex h-9 items-center rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
-                      >
-                        {t("srv.files.confirm")}
-                      </button>
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {confirmEntry && (
-                <motion.div
-                  key="confirm"
-                  {...backdrop}
-                  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
-                  onClick={() => setConfirmEntry(null)}
-                >
-                  <motion.div
-                    {...card}
-                    onClick={(ev) => ev.stopPropagation()}
-                    className="w-full max-w-sm rounded-2xl border border-white/10 bg-neutral-950 p-5 shadow-2xl"
-                  >
-                    <p className="text-sm font-semibold">{t("srv.files.delete")}</p>
-                    <p className="mt-2 text-sm text-white/60">
-                      {t("srv.files.confirmDelete")}{" "}
-                      <span className="font-mono text-white/80">{confirmEntry.name}</span>
-                    </p>
-                    <div className="mt-4 flex justify-end gap-2">
-                      <button
-                        onClick={() => setConfirmEntry(null)}
-                        className="inline-flex h-9 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5"
-                      >
-                        {t("srv.files.cancel")}
-                      </button>
-                      <button
-                        onClick={doDelete}
-                        disabled={busy}
-                        className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-                      >
-                        <Trash2 className="h-4 w-4" /> {t("srv.files.delete")}
-                      </button>
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence>
               {toast && (
                 <motion.div
                   key="toast"
@@ -524,6 +445,72 @@ export default function VmFiles({ id }: { id: string }) {
           </>,
           document.body,
         )}
+
+      {/* New / rename dialog — bottom sheet on mobile */}
+      <Sheet
+        open={!!dialog}
+        onClose={() => setDialog(null)}
+        title={dialog ? t(`srv.files.${dialog.mode}`) : undefined}
+      >
+        {dialog && (
+          <>
+            <input
+              autoFocus
+              value={dialog.value}
+              onChange={(ev) => setDialog({ ...dialog, value: ev.target.value })}
+              onKeyDown={(ev) => ev.key === "Enter" && submitDialog()}
+              spellCheck={false}
+              className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 font-mono text-sm outline-none focus:border-white/30"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDialog(null)}
+                className="inline-flex h-9 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5"
+              >
+                {t("srv.files.cancel")}
+              </button>
+              <button
+                onClick={submitDialog}
+                disabled={busy || !dialog.value.trim()}
+                className="inline-flex h-9 items-center rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
+              >
+                {t("srv.files.confirm")}
+              </button>
+            </div>
+          </>
+        )}
+      </Sheet>
+
+      {/* Delete confirmation — bottom sheet on mobile */}
+      <Sheet
+        open={!!confirmEntry}
+        onClose={() => setConfirmEntry(null)}
+        title={t("srv.files.delete")}
+      >
+        {confirmEntry && (
+          <>
+            <p className="text-sm text-white/60">
+              {t("srv.files.confirmDelete")}{" "}
+              <span className="font-mono text-white/80">{confirmEntry.name}</span>
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmEntry(null)}
+                className="inline-flex h-9 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5"
+              >
+                {t("srv.files.cancel")}
+              </button>
+              <button
+                onClick={doDelete}
+                disabled={busy}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" /> {t("srv.files.delete")}
+              </button>
+            </div>
+          </>
+        )}
+      </Sheet>
     </FadeIn>
   );
 }
