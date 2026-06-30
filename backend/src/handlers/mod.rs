@@ -18,6 +18,7 @@ pub mod oauth;
 pub mod orgs;
 pub mod servers;
 pub mod sessions;
+pub mod term;
 pub mod vm_agent;
 pub mod tickets;
 pub mod webhooks;

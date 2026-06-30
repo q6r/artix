@@ -347,6 +347,8 @@ pub fn build_router(state: AppState) -> Router {
         // Real-time gateway: ticket (authed) + WebSocket upgrade (ticket-authed).
         .route("/ws/ticket", get(ws::ticket))
         .route("/ws", get(ws::upgrade))
+        // xterm.js serial terminal: backend WS proxy to the Proxmox console.
+        .route("/ws/term/:id", get(handlers::term::term_proxy))
         .layer(from_fn_with_state(state.clone(), ratelimit::global_limiter))
         .layer(from_fn_with_state(state.clone(), headers::security_headers))
         .layer(cors)

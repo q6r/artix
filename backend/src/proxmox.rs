@@ -6,10 +6,13 @@
 //! `from_config`) when `PROXMOX_API_URL`/token are not set, so the rest of the
 //! app runs fine without a hypervisor.
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use reqwest::Method;
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::{config::Config, error::AppError, error::AppResult};
 
@@ -24,6 +27,11 @@ pub struct ProxmoxClient {
     pub template_vmid: i64,
     pub storage: String,
     pub bridge: String,
+    /// Restricted PVE user used only for the xterm.js serial terminal.
+    console_user: String,
+    console_password: String,
+    /// Cached PVE login ticket: (ticket, csrf, expires_at_unix).
+    ticket_cache: Arc<Mutex<Option<(String, String, i64)>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,6 +111,20 @@ pub struct ConsoleTicket {
     pub ws_url: String,
 }
 
+/// Everything the backend WS proxy needs to bridge a browser xterm.js to the
+/// Proxmox serial `vncwebsocket` (the cookie/ticket never reach the browser).
+#[derive(Debug, Clone)]
+pub struct TermSession {
+    /// PVE user that owns the term ticket (sent in the in-band `user:ticket` auth).
+    pub user: String,
+    /// termproxy ticket — used both in the URL and the in-band auth line.
+    pub ticket: String,
+    /// PVE session ticket — sent to Proxmox as the `PVEAuthCookie` on the WS.
+    pub pveauth: String,
+    /// Full `wss://…/vncwebsocket?port=&vncticket=` URL the backend dials.
+    pub ws_url: String,
+}
+
 /// Minimal percent-encoding for the vnc ticket in the websocket URL.
 fn pct(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 2);
@@ -167,7 +189,102 @@ impl ProxmoxClient {
             template_vmid: cfg.proxmox_template_vmid,
             storage: cfg.proxmox_storage.clone(),
             bridge: cfg.proxmox_bridge.clone(),
+            console_user: cfg.proxmox_console_user.clone(),
+            console_password: cfg.proxmox_console_password.clone(),
+            ticket_cache: Arc::new(Mutex::new(None)),
         })
+    }
+
+    /// A real PVE login ticket (cached ~90 min) for `console_user`. Required by
+    /// the xterm.js serial terminal, whose in-band auth rejects API tokens.
+    async fn pve_ticket(&self) -> AppResult<(String, String)> {
+        let now = Utc::now().timestamp();
+        {
+            let guard = self.ticket_cache.lock().await;
+            if let Some((t, c, exp)) = guard.as_ref() {
+                if *exp > now {
+                    return Ok((t.clone(), c.clone()));
+                }
+            }
+        }
+        if self.console_user.is_empty() || self.console_password.is_empty() {
+            return Err(AppError::Unavailable("serial console not configured".into()));
+        }
+        let res = self
+            .http
+            .post(format!("{}/access/ticket", self.base))
+            .form(&[
+                ("username", self.console_user.as_str()),
+                ("password", self.console_password.as_str()),
+            ])
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("pve ticket: {e}")))?;
+        if !res.status().is_success() {
+            return Err(AppError::Internal("pve ticket: login failed".into()));
+        }
+        let body: Value = res
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("pve ticket json: {e}")))?;
+        let d = &body["data"];
+        let ticket = d.get("ticket").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let csrf = d
+            .get("CSRFPreventionToken")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if ticket.is_empty() {
+            return Err(AppError::Internal("pve ticket: empty".into()));
+        }
+        // PVE tickets last ~2h; refresh after 90 min.
+        *self.ticket_cache.lock().await = Some((ticket.clone(), csrf.clone(), now + 90 * 60));
+        Ok((ticket, csrf))
+    }
+
+    /// Open an xterm.js serial terminal session for a VM. Returns everything the
+    /// backend WS proxy needs to bridge the browser to Proxmox's `vncwebsocket`.
+    pub async fn term(&self, vmid: i64) -> AppResult<TermSession> {
+        let (pveauth, csrf) = self.pve_ticket().await?;
+        let url = format!(
+            "{}/nodes/{}/qemu/{}/termproxy",
+            self.base, self.node, vmid
+        );
+        let res = self
+            .http
+            .post(&url)
+            .header("Cookie", format!("PVEAuthCookie={pveauth}"))
+            .header("CSRFPreventionToken", &csrf)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("termproxy: {e}")))?;
+        if !res.status().is_success() {
+            return Err(AppError::Internal(format!(
+                "termproxy: status {}",
+                res.status()
+            )));
+        }
+        let body: Value = res
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("termproxy json: {e}")))?;
+        let d = &body["data"];
+        let user = d.get("user").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let ticket = d.get("ticket").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let port = d
+            .get("port")
+            .and_then(|x| x.as_str().map(str::to_string).or_else(|| x.as_i64().map(|n| n.to_string())))
+            .unwrap_or_default();
+        let ws = self.web_base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
+        let ws_url = format!(
+            "{}/api2/json/nodes/{}/qemu/{}/vncwebsocket?port={}&vncticket={}",
+            ws,
+            self.node,
+            vmid,
+            port,
+            pct(&ticket)
+        );
+        Ok(TermSession { user, ticket, pveauth, ws_url })
     }
 
     async fn call(

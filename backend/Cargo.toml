@@ -15,6 +15,10 @@ http = "1"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
+futures-util = "0.3"
+# Outbound WebSocket to the Proxmox serial console (self-signed TLS).
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+native-tls = "0.2"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

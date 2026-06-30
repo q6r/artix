@@ -61,6 +61,10 @@ pub struct Config {
     pub storage_pool: Vec<String>,
     pub proxmox_bridge: String,
     pub proxmox_insecure: bool,
+    /// A real PVE user (e.g. `console@pve`) restricted to VM.Console — needed for
+    /// the xterm.js serial terminal, whose in-band auth rejects API tokens.
+    pub proxmox_console_user: String,
+    pub proxmox_console_password: String,
     /// OS label -> template VMID (e.g. {"Debian 12": 9001}). Falls back to
     /// `proxmox_template_vmid` for any label not listed.
     pub os_templates: HashMap<String, i64>,
@@ -205,6 +209,8 @@ impl Config {
                 .collect(),
             proxmox_bridge: opt("PROXMOX_BRIDGE", "vmbr0"),
             proxmox_insecure: opt("PROXMOX_INSECURE", "false") == "true",
+            proxmox_console_user: opt("PROXMOX_CONSOLE_USER", ""),
+            proxmox_console_password: opt("PROXMOX_CONSOLE_PASSWORD", ""),
             os_templates: serde_json::from_str(&opt("OS_TEMPLATES", "{}")).unwrap_or_default(),
             frp_relays: opt("FRP_RELAYS", ""),
             frp_relay_host: opt("FRP_RELAY_HOST", ""),
