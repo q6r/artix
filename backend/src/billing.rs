@@ -645,6 +645,19 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
         _ => {}
     }
 
+    // Keep an admin-set vencimento in sync with the paid billing period so the
+    // expiry worker doesn't suspend a VPS that just renewed.
+    if server.expires_at.is_some() {
+        let _ = state
+            .db
+            .servers()
+            .update_one(
+                doc! { "_id": server_id },
+                doc! { "$set": { "expires_at": bson::DateTime::from_chrono(invoice.period_end) }},
+            )
+            .await;
+    }
+
     if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
         email::send_payment_confirmed(state, &user, invoice).await;
     }
@@ -849,16 +862,6 @@ pub async fn run_expiry_cycle(state: &AppState) -> AppResult<()> {
 }
 
 async fn issue_renewal(state: &AppState, sub: &Subscription, now: DateTime<Utc>) -> AppResult<()> {
-    // Admin-managed expiry overrides billing: never auto-invoice a VPS that has a
-    // manual vencimento — its lifecycle is driven by run_expiry_cycle, not renewals.
-    if let Some(sid) = sub.server_id {
-        if let Some(server) = state.db.servers().find_one(doc! { "_id": sid }).await? {
-            if server.expires_at.is_some() {
-                return Ok(());
-            }
-        }
-    }
-
     // Skip if a future-period open invoice already exists.
     let existing = state
         .db

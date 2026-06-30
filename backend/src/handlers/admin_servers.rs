@@ -216,6 +216,39 @@ pub async fn create_server(
     let inserted = state.db.servers().insert_one(&server).await?;
     let mut created = server;
     created.id = inserted.inserted_id.as_object_id();
+
+    // A vencimento (non-lifetime) makes it a real billable subscription: it shows
+    // up in billing and the renewal worker invoices it at the period end. Lifetime
+    // VPS (expires_at == None) stay unbilled.
+    if let Some(period_end) = expires_at {
+        let price_cents = state
+            .db
+            .plans()
+            .find_one(doc! { "slug": &req.plan })
+            .await
+            .ok()
+            .flatten()
+            .map(|p| p.price_cents)
+            .unwrap_or(0);
+        let sub = crate::models::Subscription {
+            id: None,
+            user_id: owner,
+            server_id: created.id,
+            plan: req.plan.clone(),
+            status: crate::models::SubscriptionStatus::Active,
+            price_cents,
+            currency: state.cfg.billing_currency.clone(),
+            interval: "monthly".into(),
+            provider: Some("crypto".into()),
+            current_period_start: Some(now),
+            current_period_end: Some(period_end),
+            cancel_at_period_end: false,
+            created_at: now,
+            updated_at: now,
+        };
+        let _ = state.db.subscriptions().insert_one(&sub).await;
+    }
+
     security::audit(
         &state,
         auth.user_id,
