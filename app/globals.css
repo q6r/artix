@@ -271,3 +271,11 @@
     animation: none;
   }
 }
+/* Prevent mobile (iOS) auto-zoom on focusing inputs: form controls must be >=16px. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

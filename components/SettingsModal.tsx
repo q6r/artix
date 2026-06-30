@@ -608,14 +608,15 @@ function MembersSection(p: OrgSectionProps) {
                 placeholder={t("org.emailPlaceholder")}
                 className={`${inputCls} flex-1`}
               />
-              <select
+              <Select
                 value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-white/30"
-              >
-                <option value="member">{t("org.role.member")}</option>
-                <option value="admin">{t("org.role.admin")}</option>
-              </select>
+                onChange={setRole}
+                className="h-11 px-4 text-sm sm:w-40"
+                options={[
+                  { value: "member", label: t("org.role.member") },
+                  { value: "admin", label: t("org.role.admin") },
+                ]}
+              />
               <button
                 type="submit"
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85"
@@ -838,7 +839,18 @@ export default function SettingsModal({
   const { t } = useLang();
   const { user } = useAuth();
   const dragControls = useDragControls();
+  const [isMobile, setIsMobile] = useState(false);
   const [active, setActive] = useState<SectionId>("perfil");
+
+  // Mobile gets the bottom-sheet (slide-up + drag) behaviour; desktop keeps the
+  // original centered scale/pop animation.
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
   const { data: orgs } = useQuery<Org[]>(open ? "orgs" : null);
   const [orgId, setOrgId] = useState<string | null>(null);
 
@@ -884,11 +896,11 @@ export default function SettingsModal({
             role="dialog"
             aria-label={t("dash.settings.title")}
             onClick={(e) => e.stopPropagation()}
-            initial={{ opacity: 0, y: "100%" }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: "100%" }}
+            initial={isMobile ? { opacity: 0, y: "100%" } : { opacity: 0, scale: 0.85 }}
+            animate={isMobile ? { opacity: 1, y: 0 } : { opacity: 1, scale: 1 }}
+            exit={isMobile ? { opacity: 0, y: "100%" } : { opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            drag="y"
+            drag={isMobile ? "y" : false}
             dragListener={false}
             dragControls={dragControls}
             dragConstraints={{ top: 0, bottom: 0 }}
