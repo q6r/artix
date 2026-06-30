@@ -47,7 +47,11 @@ export default function Select({
         setOpen(false);
       }
     };
-    const onScroll = () => setOpen(false);
+    const onScroll = (e: Event) => {
+      // Don't close when scrolling INSIDE the dropdown itself (only on page scroll).
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("mousedown", onDown);
     window.addEventListener("scroll", onScroll, true);

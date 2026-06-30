@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useDragControls } from "motion/react";
 import Select from "@/components/Select";
 import Link from "next/link";
 import Tip from "@/components/Tip";
@@ -837,6 +837,7 @@ export default function SettingsModal({
 }) {
   const { t } = useLang();
   const { user } = useAuth();
+  const dragControls = useDragControls();
   const [active, setActive] = useState<SectionId>("perfil");
   const { data: orgs } = useQuery<Org[]>(open ? "orgs" : null);
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -887,8 +888,21 @@ export default function SettingsModal({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: "100%" }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            drag="y"
+            dragListener={false}
+            dragControls={dragControls}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.6 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 110 || info.velocity.y > 600) onClose();
+            }}
             className="relative flex h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-[#0a0a0a] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)] sm:h-[min(88vh,760px)] sm:w-[min(96vw,1000px)] sm:flex-row sm:rounded-2xl"
           >
+            {/* Mobile drag handle (drag down to close) */}
+            <div
+              onPointerDown={(e) => dragControls.start(e)}
+              className="mx-auto mt-2.5 h-1.5 w-10 shrink-0 cursor-grab touch-none rounded-full bg-white/20 sm:hidden"
+            />
             {/* Sub-sidebar */}
             <aside className="hidden w-[256px] shrink-0 flex-col border-r border-white/10 bg-white/[0.02] sm:flex">
               <header className="flex items-center gap-3 px-4 py-4">
@@ -998,7 +1012,7 @@ export default function SettingsModal({
                 type="button"
                 onClick={onClose}
                 aria-label={t("dash.settings.close")}
-                className="absolute right-4 top-4 rounded-md p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                className="absolute right-4 top-4 hidden rounded-md p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white sm:block"
               >
                 <X className="h-4 w-4" />
               </button>

@@ -182,7 +182,7 @@ export default function DashboardLayout({
           {/* Topbar */}
           <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b border-white/10 bg-black/60 px-4 backdrop-blur-xl sm:px-6">
             <Link href="/dashboard" className="lg:hidden">
-              <Logo />
+              <Logo short />
             </Link>
 
             <div className="hidden flex-1 lg:block">

@@ -120,6 +120,20 @@ export default function ServerDetailClient({ id }: { id: string }) {
     if (event === "stat") setStat(data as ServerStat);
   });
 
+  // While the VM is still installing (provisioned but no IP yet), refresh so the
+  // IP/SSH details appear and the banner clears without a manual reload.
+  useEffect(() => {
+    const installing =
+      !!server?.vmid &&
+      !server?.ip &&
+      server?.state !== "suspended" &&
+      server?.state !== "stopped" &&
+      server?.state !== "error";
+    if (!installing) return;
+    const h = setInterval(() => mutate(`servers/${id}`), 12000);
+    return () => clearInterval(h);
+  }, [server?.vmid, server?.ip, server?.state, id]);
+
   if (loading) return <DetailSkeleton />;
   if (error || !server) return <p className="text-sm text-red-300">{t("srv.error")}</p>;
 
@@ -212,6 +226,20 @@ export default function ServerDetailClient({ id }: { id: string }) {
           {t("srv.notProvisioned")}
         </FadeIn>
       )}
+
+      {provisioned &&
+        !server.ip &&
+        state !== "suspended" &&
+        state !== "stopped" &&
+        state !== "error" && (
+          <FadeIn
+            delay={0.04}
+            className="flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3"
+          >
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
+            <p className="text-sm text-amber-200/90">{t("srv.provisioning")}</p>
+          </FadeIn>
+        )}
 
       <FadeIn delay={0.06} className="flex gap-1 border-b border-white/10">
         {tabs.map((tb) => (
