@@ -166,8 +166,11 @@ pub async fn create_server(
     let os = req.os.clone().unwrap_or_else(|| "Ubuntu 24.04".into());
 
     let template = state.cfg.os_templates.get(&os).copied().unwrap_or(px.template_vmid);
+    let storage = crate::storage::pick(&state, specs.disk_gb)
+        .await?
+        .ok_or_else(|| AppError::Unavailable("sem capacidade de armazenamento".into()))?;
     let vmid = px.next_id().await?;
-    let upid = px.clone_template(template, vmid, &name).await?;
+    let upid = px.clone_template(template, vmid, &name, &storage).await?;
     px.wait_task(&upid).await?;
     px.set_resources(vmid, specs.vcpu, specs.ram_gb * 1024).await?;
     if let Err(e) = px.resize_disk(vmid, "scsi0", specs.disk_gb).await {
@@ -204,6 +207,7 @@ pub async fn create_server(
         root_password: Some(root_password),
         ssh_host: None,
         ssh_port: None,
+        storage: Some(storage.clone()),
         specs,
         expires_at,
         created_at: now,

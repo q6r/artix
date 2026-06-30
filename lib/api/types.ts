@@ -181,6 +181,20 @@ export type AdminRelay = {
   enabled: boolean;
 };
 
+export type AdminStorage = {
+  name: string;
+  type: string;
+  total_gb: number;
+  used_gb: number;
+  committed_gb: number;
+  reserved_gb: number;
+  sellable_gb: number;
+  free_to_sell_gb: number;
+  vps_count: number;
+  pct_committed: number;
+  sellable: boolean;
+};
+
 export type MetricPoint = {
   time: number;
   cpu: number;

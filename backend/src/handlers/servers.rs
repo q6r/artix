@@ -56,8 +56,11 @@ pub async fn provision(state: &AppState, server: &Server) -> AppResult<()> {
         .get(&server.os)
         .copied()
         .unwrap_or(px.template_vmid);
+    let storage = crate::storage::pick(state, server.specs.disk_gb)
+        .await?
+        .ok_or_else(|| AppError::Unavailable("sem capacidade de armazenamento".into()))?;
     let vmid = px.next_id().await?;
-    let upid = px.clone_template(template, vmid, &server.name).await?;
+    let upid = px.clone_template(template, vmid, &server.name, &storage).await?;
     px.wait_task(&upid).await?;
     px.set_resources(vmid, server.specs.vcpu, server.specs.ram_gb * 1024)
         .await?;
@@ -85,6 +88,7 @@ pub async fn provision(state: &AppState, server: &Server) -> AppResult<()> {
             doc! { "_id": server.id },
             doc! { "$set": {
                 "vmid": vmid,
+                "storage": &storage,
                 "node": px.node.clone(),
                 "state": "running",
                 "root_password": &root_password,
@@ -160,8 +164,11 @@ pub async fn create(
 
     // Direct provision (admin/free path): clone -> size -> cloud-init -> start.
     let template = state.cfg.os_templates.get(&os).copied().unwrap_or(px.template_vmid);
+    let storage = crate::storage::pick(&state, specs.disk_gb)
+        .await?
+        .ok_or_else(|| AppError::Unavailable("sem capacidade de armazenamento".into()))?;
     let vmid = px.next_id().await?;
-    let upid = px.clone_template(template, vmid, &name).await?;
+    let upid = px.clone_template(template, vmid, &name, &storage).await?;
     px.wait_task(&upid).await?;
     px.set_resources(vmid, specs.vcpu, specs.ram_gb * 1024).await?;
     if let Err(e) = px.resize_disk(vmid, "scsi0", specs.disk_gb).await {
@@ -199,6 +206,7 @@ pub async fn create(
         root_password: Some(root_password),
         ssh_host: None,
         ssh_port: None,
+        storage: Some(storage.clone()),
         specs,
         expires_at: None,
         created_at: now,

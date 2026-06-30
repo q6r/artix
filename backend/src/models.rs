@@ -278,6 +278,9 @@ pub struct Server {
     /// Cloud-init SSH public key captured at subscribe time (public, not secret).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cloud_init_ssh_key: Option<String>,
+    /// Storage pool the VM's disk lives on (committed-capacity placement).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage: Option<String>,
     /// Initial root password set via cloud-init at provision time. Shown once in
     /// the panel so the owner can copy it; only ever returned to that owner.
     #[serde(default, skip_serializing_if = "Option::is_none")]

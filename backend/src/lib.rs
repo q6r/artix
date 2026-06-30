@@ -19,6 +19,7 @@ pub mod proxmox;
 pub mod ratelimit;
 pub mod security;
 pub mod state;
+pub mod storage;
 pub mod ws;
 
 use axum::{
@@ -153,6 +154,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/relays", get(handlers::admin_relays::list))
         .route("/relays/:name", patch(handlers::admin_relays::set_enabled))
+        .route("/storage", get(handlers::admin_storage::list))
         .route("/dedicated-ips", get(handlers::dedicated_ip::admin_list))
         .route("/dedicated-ips/:id", patch(handlers::dedicated_ip::admin_assign))
         .route("/subscriptions", get(handlers::billing::admin_list_subscriptions))

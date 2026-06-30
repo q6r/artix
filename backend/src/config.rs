@@ -57,6 +57,8 @@ pub struct Config {
     pub proxmox_node: String,
     pub proxmox_template_vmid: i64,
     pub proxmox_storage: String,
+    pub storage_sell_threshold: f64,
+    pub storage_pool: Vec<String>,
     pub proxmox_bridge: String,
     pub proxmox_insecure: bool,
     /// OS label -> template VMID (e.g. {"Debian 12": 9001}). Falls back to
@@ -195,6 +197,12 @@ impl Config {
             proxmox_node: opt("PROXMOX_NODE", "pve"),
             proxmox_template_vmid: parse("PROXMOX_TEMPLATE_VMID", 9000i64)?,
             proxmox_storage: opt("PROXMOX_STORAGE", "local-lvm"),
+            storage_sell_threshold: opt("STORAGE_SELL_THRESHOLD", "0.8").parse::<f64>().unwrap_or(0.8),
+            storage_pool: opt("STORAGE_POOL", "")
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
             proxmox_bridge: opt("PROXMOX_BRIDGE", "vmbr0"),
             proxmox_insecure: opt("PROXMOX_INSECURE", "false") == "true",
             os_templates: serde_json::from_str(&opt("OS_TEMPLATES", "{}")).unwrap_or_default(),

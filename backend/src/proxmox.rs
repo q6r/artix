@@ -122,6 +122,21 @@ pub fn task_node<'a>(upid: &'a str, fallback: &'a str) -> &'a str {
     upid.split(':').nth(1).filter(|s| !s.is_empty()).unwrap_or(fallback)
 }
 
+#[derive(serde::Deserialize)]
+pub struct StorageStatus {
+    pub storage: String,
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub total: i64,
+    #[serde(default)]
+    pub used: i64,
+    #[serde(default)]
+    pub avail: i64,
+    #[serde(default)]
+    pub content: String,
+}
+
 impl ProxmoxClient {
     pub fn from_config(cfg: &Config) -> Option<Self> {
         if cfg.proxmox_api_url.is_empty()
@@ -195,18 +210,30 @@ impl ProxmoxClient {
     }
 
     /// Full-clone `template_vmid` into `newid`. Returns the task UPID.
+    /// Storages on this node (with total/used bytes + content types).
+    pub async fn list_storages(&self) -> AppResult<Vec<StorageStatus>> {
+        let path = format!("/nodes/{}/storage", self.node);
+        let d = self.call(Method::GET, &path, None).await?;
+        let arr = d.as_array().ok_or_else(|| AppError::Internal("storage list".into()))?;
+        Ok(arr
+            .iter()
+            .filter_map(|v| serde_json::from_value::<StorageStatus>(v.clone()).ok())
+            .collect())
+    }
+
     pub async fn clone_template(
         &self,
         template_vmid: i64,
         newid: i64,
         name: &str,
+        storage: &str,
     ) -> AppResult<String> {
         let path = format!("/nodes/{}/qemu/{}/clone", self.node, template_vmid);
         let form = [
             ("newid", newid.to_string()),
             ("name", name.to_string()),
             ("full", "1".to_string()),
-            ("storage", self.storage.clone()),
+            ("storage", storage.to_string()),
         ];
         let d = self.call(Method::POST, &path, Some(&form)).await?;
         d.as_str()

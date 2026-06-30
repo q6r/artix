@@ -179,6 +179,11 @@ pub async fn create_subscription(
         _ => return Err(AppError::Validation("unknown payment method".into())),
     }
     let (plan_id, specs, price_cents) = resolve_specs(state, &req).await?;
+    if !crate::storage::has_capacity(state, specs.disk_gb).await? {
+        return Err(AppError::Unavailable(
+            "Sem capacidade de armazenamento no momento. Tente novamente mais tarde.".into(),
+        ));
+    }
     let user_id = user.id.ok_or(AppError::Unauthorized)?;
     let now = Utc::now();
     let node = state
@@ -203,6 +208,7 @@ pub async fn create_subscription(
         root_password: None, // set at provision time (after payment)
         ssh_host: None,
         ssh_port: None,
+        storage: None,
         specs,
         expires_at: None, // billing-driven; subscription controls the lifecycle
         created_at: now,

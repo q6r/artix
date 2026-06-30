@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_plans;
 pub mod admin_relays;
+pub mod admin_storage;
 pub mod admin_servers;
 pub mod announcements;
 pub mod auth;

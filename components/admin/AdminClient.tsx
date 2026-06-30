@@ -18,6 +18,7 @@ import type {
   AdminUser,
   AdminServer,
   AdminRelay,
+  AdminStorage,
   AdminDedicatedIp,
   AdminPlan,
   Plan,
@@ -33,6 +34,7 @@ import type {
 type Tab =
   | "servers"
   | "relays"
+  | "storage"
   | "dedipips"
   | "plans"
   | "finance"
@@ -59,6 +61,7 @@ export default function AdminClient() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "servers", label: t("admin.tab.servers") },
     { id: "relays", label: t("admin.tab.relays") },
+    { id: "storage", label: t("admin.tab.storage") },
     { id: "dedipips", label: t("admin.tab.dedipips") },
     { id: "plans", label: t("admin.tab.plans") },
     { id: "finance", label: t("admin.tab.finance") },
@@ -94,6 +97,7 @@ export default function AdminClient() {
 
       {tab === "servers" && <ServersPanel />}
       {tab === "relays" && <RelaysPanel />}
+      {tab === "storage" && <StoragePanel />}
       {tab === "dedipips" && <DedicatedIpsPanel />}
       {tab === "plans" && <PlansPanel />}
       {tab === "finance" && <FinancePanel />}
@@ -871,6 +875,67 @@ function RelaysPanel() {
 }
 
 // ----------------------------- Plans -----------------------------
+
+function StoragePanel() {
+  const { t } = useLang();
+  const { data: items, error, loading } = useQuery<AdminStorage[]>("admin/storage");
+  if (loading)
+    return <div className="h-24 animate-pulse rounded-2xl border border-white/10 bg-white/[0.02]" />;
+  if (error) return <p className="text-sm text-red-300">{t("admin.error")}</p>;
+  return (
+    <FadeIn className="space-y-3">
+      <p className="text-sm text-white/55">{t("admin.storage.desc")}</p>
+      <div className="space-y-2">
+        {(items ?? []).map((s) => {
+          const pct = Math.min(100, s.pct_committed);
+          const danger = pct >= 80 || !s.sellable;
+          return (
+            <div key={s.name} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{s.name}</span>
+                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/50">
+                    {s.type}
+                  </span>
+                  {!s.sellable && (
+                    <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] text-red-300">
+                      {t("admin.storage.full")}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-white/45">{s.vps_count} VPS</span>
+              </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full rounded-full ${danger ? "bg-red-400" : "bg-emerald-400"}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-white/55">
+                <span>
+                  {t("admin.storage.committed")}:{" "}
+                  <span className="font-medium text-white/80">
+                    {s.committed_gb} / {s.sellable_gb} GB ({pct}%)
+                  </span>
+                </span>
+                <span>
+                  {t("admin.storage.sellable")}:{" "}
+                  <span className="font-medium text-white/80">{s.free_to_sell_gb} GB</span>
+                </span>
+                <span>
+                  {t("admin.storage.used")}: {s.used_gb} / {s.total_gb} GB
+                </span>
+              </div>
+            </div>
+          );
+        })}
+        {(items ?? []).length === 0 && (
+          <p className="text-sm text-white/45">{t("admin.storage.empty")}</p>
+        )}
+      </div>
+    </FadeIn>
+  );
+}
 
 const fmtMoney = (cents: number) => `R$ ${(cents / 100).toFixed(2)}`;
 
