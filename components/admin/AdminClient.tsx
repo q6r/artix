@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { Plus, Trash2, X, Shield, Pencil, Check } from "lucide-react";
 import FadeIn from "@/components/FadeIn";
 import Select from "@/components/Select";
+import Sheet from "@/components/ui/Sheet";
 import { useLang } from "@/components/LanguageProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { api, ApiError } from "@/lib/api/client";
@@ -572,35 +572,8 @@ function ServerEditModal({
     "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none focus:border-white/30";
 
   if (typeof document === "undefined") return null;
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      onClick={onClose}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-neutral-950 p-5 shadow-2xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">
-            {t("admin.servers.editTitle")} · {server.name}
-          </h2>
-          <button
-            onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-white/60 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
+  return (
+    <Sheet open onClose={onClose} title={`${t("admin.servers.editTitle")} · ${server.name}`}>
         <div className="space-y-3">
           <label className="flex flex-col gap-2">
             <span className="text-sm font-medium text-white/70">{t("admin.servers.owner")}</span>
@@ -689,9 +662,7 @@ function ServerEditModal({
             </button>
           </div>
         </div>
-      </motion.div>
-    </motion.div>,
-    document.body,
+    </Sheet>
   );
 }
 
@@ -1077,34 +1048,8 @@ function PlanModal({ plan, onClose }: { plan: AdminPlan | null; onClose: () => v
     "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none focus:border-white/30";
 
   if (typeof document === "undefined") return null;
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      onClick={onClose}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-neutral-950 p-5 shadow-2xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">
-            {plan ? t("admin.plans.edit") : t("admin.plans.new")}
-          </h2>
-          <button
-            onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-white/60 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+  return (
+    <Sheet open onClose={onClose} title={plan ? t("admin.plans.edit") : t("admin.plans.new")}>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5">
@@ -1163,9 +1108,7 @@ function PlanModal({ plan, onClose }: { plan: AdminPlan | null; onClose: () => v
             </div>
           </div>
         </div>
-      </motion.div>
-    </motion.div>,
-    document.body,
+    </Sheet>
   );
 }
 
