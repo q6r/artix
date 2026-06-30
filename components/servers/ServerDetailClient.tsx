@@ -10,6 +10,7 @@ import { useLang } from "@/components/LanguageProvider";
 import { useSubscription } from "@/hooks/use-subscription";
 import ServerStateBadge from "@/components/servers/ServerStateBadge";
 import VmConsole from "@/components/servers/VmConsole";
+import VmVnc from "@/components/servers/VmVnc";
 import VmFiles from "@/components/servers/VmFiles";
 import MetricChart, { type ChartPoint } from "@/components/servers/MetricChart";
 import { api, ApiError } from "@/lib/api/client";
@@ -28,7 +29,7 @@ const OS_OPTIONS = [
 import type { MetricPoint, Server, ServerState, ServerStat, DedicatedIp, PlansResponse } from "@/lib/api/types";
 import { formatMoney } from "@/lib/api/types";
 
-type Tab = "overview" | "metrics" | "files" | "console" | "settings";
+type Tab = "overview" | "metrics" | "files" | "vnc" | "console" | "settings";
 
 function DetailSkeleton() {
   return (
@@ -168,7 +169,7 @@ export default function ServerDetailClient({ id }: { id: string }) {
     }
   };
 
-  const tabs: Tab[] = ["overview", "metrics", "files", "console", "settings"];
+  const tabs: Tab[] = ["overview", "metrics", "files", "vnc", "console", "settings"];
 
   return (
     <div className="space-y-6">
@@ -262,6 +263,7 @@ export default function ServerDetailClient({ id }: { id: string }) {
       )}
       {tab === "metrics" && <Metrics id={id} provisioned={provisioned} />}
       {tab === "files" && <VmFiles id={id} />}
+      {tab === "vnc" && <VmVnc id={id} />}
       {tab === "console" && <VmConsole id={id} />}
       {tab === "settings" && (
         <FadeIn className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.03] p-5">

@@ -12,6 +12,7 @@
     "@base-ui-components/react": "1.0.0-rc.0",
     "@base-ui/react": "^1.6.0",
     "@floating-ui/react": "^0.27.19",
+    "@novnc/novnc": "^1.7.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@react-three/postprocessing": "^3.0.4",
