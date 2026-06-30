@@ -25,7 +25,8 @@ const OS_OPTIONS = [
   "AlmaLinux 9",
   "Rocky Linux 9",
 ];
-import type { MetricPoint, Server, ServerState, ServerStat, DedicatedIp } from "@/lib/api/types";
+import type { MetricPoint, Server, ServerState, ServerStat, DedicatedIp, PlansResponse } from "@/lib/api/types";
+import { formatMoney } from "@/lib/api/types";
 
 type Tab = "overview" | "metrics" | "files" | "console" | "settings";
 
@@ -341,6 +342,8 @@ function Overview({
 
       {server.vmid != null && <DedicatedIpCard id={server.id} />}
 
+      {server.vmid != null && <UpgradeCard server={server} />}
+
       {ramPct != null && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
           <div className="flex items-center justify-between text-sm">
@@ -406,6 +409,105 @@ function CopyButton({ value }: { value: string }) {
     >
       {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
     </button>
+  );
+}
+
+function UpgradeCard({ server }: { server: Server }) {
+  const { t } = useLang();
+  const router = useRouter();
+  const { data: plans } = useQuery<PlansResponse>("billing/plans");
+  const rates = plans?.custom;
+  const [ram, setRam] = useState(0);
+  const [disk, setDisk] = useState(0);
+  const [method, setMethod] = useState<"crypto" | "pix" | "stripe">("crypto");
+  const [busy, setBusy] = useState(false);
+
+  const price = rates ? ram * rates.ram_cents + disk * rates.disk_cents : 0;
+  const input =
+    "h-10 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-white/30";
+
+  const buy = async () => {
+    if (busy || (ram <= 0 && disk <= 0)) return;
+    setBusy(true);
+    try {
+      const inv = await api<{ id: string }>(`servers/${server.id}/upgrade`, {
+        method: "POST",
+        json: { add_ram_gb: ram, add_disk_gb: disk, method },
+      });
+      router.push(`/dashboard/billing/${inv.id}`);
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <p className="text-sm font-medium">{t("srv.upgrade.title")}</p>
+      <p className="mt-1 text-sm text-white/55">{t("srv.upgrade.desc")}</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-white/55">{t("srv.upgrade.addRam")}</span>
+          <input
+            type="number"
+            min={0}
+            max={256}
+            value={ram}
+            onChange={(e) => setRam(Math.max(0, Number(e.target.value)))}
+            className={input}
+          />
+          <span className="text-[11px] text-white/35">
+            {t("srv.upgrade.total")}: {server.specs.ram_gb + ram} GB
+          </span>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-white/55">{t("srv.upgrade.addDisk")}</span>
+          <input
+            type="number"
+            min={0}
+            max={4000}
+            value={disk}
+            onChange={(e) => setDisk(Math.max(0, Number(e.target.value)))}
+            className={input}
+          />
+          <span className="text-[11px] text-white/35">
+            {t("srv.upgrade.total")}: {server.specs.disk_gb + disk} GB
+          </span>
+        </label>
+      </div>
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid grid-cols-3 gap-2 sm:w-64">
+          {(["crypto", "pix", "stripe"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMethod(m)}
+              className={`rounded-xl border px-2 py-2 text-xs font-medium transition-colors ${
+                method === m
+                  ? "border-white bg-white/10 text-white"
+                  : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/[0.06]"
+              }`}
+            >
+              {t(`bill.method.${m === "stripe" ? "card" : m}`)}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm">
+            <span className="text-white/45">+ </span>
+            <span className="font-semibold">{formatMoney(price)}</span>
+            <span className="text-xs text-white/45">{t("bill.perMonth")}</span>
+          </span>
+          <button
+            type="button"
+            onClick={buy}
+            disabled={busy || price <= 0}
+            className="inline-flex h-10 items-center rounded-xl bg-white px-5 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
+          >
+            {busy ? "…" : t("srv.upgrade.buy")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

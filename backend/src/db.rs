@@ -169,6 +169,7 @@ pub trait Collections {
     fn relay_settings(&self) -> mongodb::Collection<RelaySetting>;
     fn dedicated_ips(&self) -> mongodb::Collection<DedicatedIp>;
     fn notifications(&self) -> mongodb::Collection<Notification>;
+    fn upgrades(&self) -> mongodb::Collection<Upgrade>;
 }
 
 impl Collections for Database {
@@ -243,5 +244,8 @@ impl Collections for Database {
     }
     fn notifications(&self) -> mongodb::Collection<Notification> {
         self.collection("notifications")
+    }
+    fn upgrades(&self) -> mongodb::Collection<Upgrade> {
+        self.collection("upgrades")
     }
 }

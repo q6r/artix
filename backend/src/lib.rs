@@ -262,6 +262,7 @@ pub fn build_router(state: AppState) -> Router {
             "/servers/:id/dedicated-ip",
             get(handlers::dedicated_ip::get).post(handlers::dedicated_ip::buy),
         )
+        .route("/servers/:id/upgrade", post(handlers::upgrade::buy))
         .route(
             "/keys",
             get(handlers::keys::list).post(handlers::keys::create),

@@ -566,6 +566,47 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
         return Ok(());
     }
 
+    // Paid upgrade: apply the new RAM/disk to the live VM, then we're done.
+    if sub.plan == "upgrade" {
+        if let Ok(Some(up)) = state.db.upgrades().find_one(doc! { "subscription_id": sub.id }).await {
+            if let Ok(Some(server)) = state.db.servers().find_one(doc! { "_id": up.server_id }).await {
+                let new_ram = server.specs.ram_gb + up.add_ram_gb;
+                let new_disk = server.specs.disk_gb + up.add_disk_gb;
+                if let (Some(px), Some(vmid)) = (state.proxmox.as_ref(), server.vmid) {
+                    let _ = px.set_resources(vmid, server.specs.vcpu, new_ram * 1024).await;
+                    if up.add_disk_gb > 0 {
+                        let _ = px.resize_disk(vmid, "scsi0", new_disk).await;
+                    }
+                }
+                let mut specs = server.specs.clone();
+                specs.ram_gb = new_ram;
+                specs.disk_gb = new_disk;
+                if let Ok(b) = bson::to_bson(&specs) {
+                    let _ = state
+                        .db
+                        .servers()
+                        .update_one(doc! { "_id": up.server_id }, doc! { "$set": { "specs": b }})
+                        .await;
+                }
+            }
+            let _ = state
+                .db
+                .upgrades()
+                .update_one(
+                    doc! { "_id": up.id },
+                    doc! { "$set": { "status": "applied", "applied_at": bson::DateTime::from_chrono(now), "updated_at": bson::DateTime::from_chrono(now) }},
+                )
+                .await;
+        }
+        if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+            email::send_payment_confirmed(state, &user, invoice).await;
+        }
+        crate::notify::notify(state, sub.user_id, "upgrade", "Upgrade aplicado", "Os novos recursos já estão ativos na sua VPS.", Some("/dashboard/servers".into())).await;
+        let invoice_id = invoice.id.unwrap_or_default().to_hex();
+        crate::ws::publish(state, format!("invoice:{invoice_id}"), "paid", serde_json::to_value(invoice.public()).unwrap_or_default());
+        return Ok(());
+    }
+
     let Some(server_id) = sub.server_id else { return Ok(()) };
     let Some(server) = state.db.servers().find_one(doc! { "_id": server_id }).await? else {
         return Ok(());
@@ -1005,6 +1046,99 @@ pub async fn create_dedicated_ip(
     let invoice = build_invoice(state, user_id, subscription.id.unwrap(), price_cents, period_start, period_end, now);
     let invoice = persist_and_charge(state, user, invoice, &method).await?;
     Ok((dip, invoice))
+}
+
+/// Buy a RAM/disk upgrade for a VPS. Priced per-GB at the custom rates; applied
+/// to the VM automatically once paid. No `server_id` on the sub (the engine never
+/// touches a VM); the `upgrades` record links it to the target VPS.
+pub async fn create_upgrade(
+    state: &AppState,
+    user: &User,
+    server_id: bson::oid::ObjectId,
+    add_ram_gb: u32,
+    add_disk_gb: u32,
+    method: Option<String>,
+) -> AppResult<(crate::models::Upgrade, Invoice)> {
+    let method = method.unwrap_or_else(|| "crypto".into());
+    match method.as_str() {
+        "crypto" if state.crypto.is_none() => return Err(AppError::Unavailable("crypto billing unavailable".into())),
+        "pix" if state.pagci.is_none() => return Err(AppError::Unavailable("pix billing unavailable".into())),
+        "stripe" if state.stripe.is_none() => return Err(AppError::Unavailable("stripe billing unavailable".into())),
+        "crypto" | "pix" | "stripe" => {}
+        _ => return Err(AppError::Validation("unknown payment method".into())),
+    }
+    if add_ram_gb == 0 && add_disk_gb == 0 {
+        return Err(AppError::Validation("nothing to upgrade".into()));
+    }
+    if add_ram_gb > 256 || add_disk_gb > 4000 {
+        return Err(AppError::Validation("upgrade too large".into()));
+    }
+    let user_id = user.id.ok_or(AppError::Unauthorized)?;
+    let now = Utc::now();
+    let price_cents = add_ram_gb as i64 * CUSTOM.ram_cents + add_disk_gb as i64 * CUSTOM.disk_cents;
+    if price_cents <= 0 {
+        return Err(AppError::Validation("invalid upgrade".into()));
+    }
+    if state
+        .db
+        .upgrades()
+        .find_one(doc! { "server_id": server_id, "status": "pending_payment" })
+        .await?
+        .is_some()
+    {
+        return Err(AppError::Conflict("an upgrade is already pending for this VPS".into()));
+    }
+
+    let mut subscription = Subscription {
+        id: None,
+        user_id,
+        server_id: None,
+        plan: "upgrade".into(),
+        status: SubscriptionStatus::PendingPayment,
+        price_cents,
+        currency: state.cfg.billing_currency.clone(),
+        interval: "monthly".into(),
+        provider: Some(method.clone()),
+        current_period_start: None,
+        current_period_end: None,
+        cancel_at_period_end: false,
+        created_at: now,
+        updated_at: now,
+    };
+    subscription.id = state
+        .db
+        .subscriptions()
+        .insert_one(&subscription)
+        .await?
+        .inserted_id
+        .as_object_id();
+
+    let mut up = crate::models::Upgrade {
+        id: None,
+        user_id,
+        server_id,
+        subscription_id: subscription.id,
+        status: crate::models::UpgradeStatus::PendingPayment,
+        add_ram_gb,
+        add_disk_gb,
+        price_cents,
+        applied_at: None,
+        created_at: now,
+        updated_at: now,
+    };
+    up.id = state
+        .db
+        .upgrades()
+        .insert_one(&up)
+        .await?
+        .inserted_id
+        .as_object_id();
+
+    let period_start = now;
+    let period_end = add_months(now, 1);
+    let invoice = build_invoice(state, user_id, subscription.id.unwrap(), price_cents, period_start, period_end, now);
+    let invoice = persist_and_charge(state, user, invoice, &method).await?;
+    Ok((up, invoice))
 }
 
 #[cfg(test)]

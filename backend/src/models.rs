@@ -1039,3 +1039,33 @@ impl Notification {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpgradeStatus {
+    PendingPayment,
+    Applied,
+    Cancelled,
+}
+
+/// collection: `upgrades` — a paid RAM/disk increase, applied to the VM on payment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Upgrade {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub user_id: ObjectId,
+    pub server_id: ObjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_id: Option<ObjectId>,
+    pub status: UpgradeStatus,
+    pub add_ram_gb: u32,
+    pub add_disk_gb: u32,
+    pub price_cents: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
+    pub applied_at: Option<DateTime<Utc>>,
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    pub updated_at: DateTime<Utc>,
+}
