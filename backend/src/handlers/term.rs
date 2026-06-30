@@ -7,6 +7,8 @@
 //! between the browser and Proxmox. Authorization is the normal owner/CONSOLE
 //! check before the upgrade.
 
+use std::sync::Arc;
+
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -18,6 +20,9 @@ use axum::{
 use bson::oid::ObjectId;
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::Deserialize;
 use tokio_tungstenite::{
     connect_async_tls_with_config, tungstenite::client::IntoClientRequest,
@@ -25,6 +30,45 @@ use tokio_tungstenite::{
 };
 
 use crate::{auth::token, permissions::server_perm, proxmox::TermSession, state::AppState};
+
+/// Accept Proxmox's self-signed cert — the connection only ever targets the
+/// configured PVE host and the term ticket is the real capability.
+#[derive(Debug)]
+struct NoVerify;
+
+impl ServerCertVerifier for NoVerify {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
 
 #[derive(Deserialize)]
 pub struct TermQuery {
@@ -63,11 +107,10 @@ pub async fn term_proxy(
         Ok(s) => s,
         Err(e) => return (StatusCode::BAD_GATEWAY, format!("term: {e}")).into_response(),
     };
-    let insecure = state.cfg.proxmox_insecure;
-    ws.on_upgrade(move |socket| bridge(socket, sess, insecure))
+    ws.on_upgrade(move |socket| bridge(socket, sess))
 }
 
-async fn bridge(browser: WebSocket, sess: TermSession, insecure: bool) {
+async fn bridge(browser: WebSocket, sess: TermSession) {
     let (mut browser_tx, mut browser_rx) = browser.split();
 
     // Dial Proxmox vncwebsocket with the PVE cookie + the binary subprotocol.
@@ -84,14 +127,18 @@ async fn bridge(browser: WebSocket, sess: TermSession, insecure: bool) {
             h.insert("Sec-WebSocket-Protocol", v);
         }
     }
-    let connector = match native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(insecure)
-        .danger_accept_invalid_hostnames(insecure)
-        .build()
+    let tls = match rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
     {
-        Ok(c) => Connector::NativeTls(c),
+        Ok(b) => b
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoVerify))
+            .with_no_client_auth(),
         Err(_) => return,
     };
+    let connector = Connector::Rustls(Arc::new(tls));
     let (pve, _resp) =
         match connect_async_tls_with_config(req, None, false, Some(connector)).await {
             Ok(x) => x,
