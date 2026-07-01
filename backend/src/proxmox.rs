@@ -125,6 +125,27 @@ pub struct TermSession {
     pub ws_url: String,
 }
 
+/// Proxmox requires a VM `name` to be a valid DNS name (letters/digits/hyphens,
+/// no spaces). The human-facing name is kept in Mongo; this is only for the
+/// hypervisor. Falls back to `vps` when nothing usable remains.
+fn sanitize_vm_name(name: &str) -> String {
+    let mut s: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .collect();
+    while s.contains("--") {
+        s = s.replace("--", "-");
+    }
+    let s = s.trim_matches('-');
+    let s: String = s.chars().take(63).collect();
+    let s = s.trim_matches('-').to_string();
+    if s.is_empty() {
+        "vps".to_string()
+    } else {
+        s
+    }
+}
+
 /// Minimal percent-encoding for the vnc ticket in the websocket URL.
 fn pct(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 2);
@@ -348,7 +369,7 @@ impl ProxmoxClient {
         let path = format!("/nodes/{}/qemu/{}/clone", self.node, template_vmid);
         let form = [
             ("newid", newid.to_string()),
-            ("name", name.to_string()),
+            ("name", sanitize_vm_name(name)),
             ("full", "1".to_string()),
             ("storage", storage.to_string()),
         ];
