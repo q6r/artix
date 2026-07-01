@@ -76,17 +76,31 @@ pub async fn create(
     // Free tier RAM cap (MB). Plan-based limits get richer in the anti-abuse wave.
     let ram_mb = 256i64;
 
-    // Per-user quota (anti-abuse). Refined per-plan later.
-    const MAX_CONTAINERS_PER_USER: u64 = 3;
-    let owned = state
-        .db
-        .servers()
-        .count_documents(doc! { "type": 1, "user_id": auth.user_id })
-        .await?;
-    if owned >= MAX_CONTAINERS_PER_USER {
-        return Err(AppError::Conflict(
-            "container limit reached for your account".into(),
-        ));
+    // Free-plan quotas (anti-abuse): 1 free container per account, capped at a
+    // global total. Paid plans (future) won't hit these.
+    const MAX_FREE_PER_USER: u64 = 1;
+    const MAX_FREE_GLOBAL: u64 = 20;
+    if plan == "free" {
+        let user_free = state
+            .db
+            .servers()
+            .count_documents(doc! { "type": 1, "plan": "free", "user_id": auth.user_id })
+            .await?;
+        if user_free >= MAX_FREE_PER_USER {
+            return Err(AppError::Conflict(
+                "você já tem um container grátis (limite: 1 por conta)".into(),
+            ));
+        }
+        let global_free = state
+            .db
+            .servers()
+            .count_documents(doc! { "type": 1, "plan": "free" })
+            .await?;
+        if global_free >= MAX_FREE_GLOBAL {
+            return Err(AppError::Conflict(
+                "o plano grátis está cheio no momento — tente novamente mais tarde".into(),
+            ));
+        }
     }
 
     let now = Utc::now();
