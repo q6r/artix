@@ -31,13 +31,31 @@ use axum::{
 };
 use serde_json::json;
 
-/// Best-effort client IP (trusts the reverse proxy's `x-forwarded-for`).
+/// Best-effort client IP for rate-limit/audit keying. Prefers Cloudflare's
+/// `CF-Connecting-IP` — the edge sets it and strips any client-supplied copy, so
+/// (unlike the first `X-Forwarded-For` element) a client can't spoof it to rotate
+/// rate-limit buckets. Falls back to XFF/`x-real-ip` when not behind Cloudflare.
 pub fn client_ip(headers: &HeaderMap) -> String {
+    if let Some(ip) = headers
+        .get("cf-connecting-ip")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return ip.to_string();
+    }
     headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.split(',').next())
         .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.trim().to_string())
+        })
         .unwrap_or_else(|| "unknown".to_string())
 }
 

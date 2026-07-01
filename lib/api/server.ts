@@ -50,6 +50,11 @@ export function backendFetch(path: string, init?: RequestInit) {
 /** The real client IP as seen by the edge, to forward to the backend (so its
  * rate-limiter / lockout key on the user, not on the BFF). */
 export function clientIp(request: Request): string | null {
+  // Cloudflare sets CF-Connecting-IP and strips any client-supplied copy, so it
+  // can't be spoofed through the edge (unlike the first X-Forwarded-For element,
+  // which the client controls). Prefer it for the rate-limit/audit key.
+  const cf = request.headers.get("cf-connecting-ip");
+  if (cf) return cf.trim();
   const xff = request.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
   return request.headers.get("x-real-ip");
