@@ -140,8 +140,48 @@ export type Server = {
   ssh_host?: string | null;
   ssh_port?: number | null;
   specs: ServerSpecs;
+  /** 0 = VPS, 1 = Container. Absent on legacy payloads (treat as 0). */
+  type?: 0 | 1;
+  container?: ContainerInfo;
   expires_at?: string | null;
   created_at: string;
+};
+
+/** Container metadata (present only when `type === 1`). */
+export type ContainerInfo = {
+  container_type: string; // "discord_bot" | "site"
+  app_id: string;
+  runtime?: string | null;
+  version?: string | null;
+  ram_mb?: number | null;
+  port?: number | null;
+  status?: string | null; // "created" | "running" | "stopped" | "exited" | ...
+  subdomain?: string | null;
+  deployed: boolean;
+};
+
+export type DeployResult = {
+  ok: boolean;
+  runtime?: string | null;
+  image?: string | null;
+  ram?: number | null;
+  port?: number | null;
+  buildLog?: string | null;
+};
+
+export type ContainerStats = {
+  cpu: string | null;
+  mem: string | null;
+  memPerc: string | null;
+};
+
+export type ContainerStatus = {
+  exists: boolean;
+  status: string | null;
+  running: boolean;
+  exitCode?: number | null;
+  startedAt?: string | null;
+  oomKilled: boolean;
 };
 
 /** A server as seen in the admin panel: the public shape plus node + owner. */

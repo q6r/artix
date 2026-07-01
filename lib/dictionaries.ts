@@ -6,6 +6,7 @@ import { blog } from "./dict/blog";
 import { dashboard } from "./dict/dashboard";
 import { billing } from "./dict/billing";
 import { serversDict } from "./dict/servers";
+import { containers } from "./dict/containers";
 import { orgsup } from "./dict/orgsup";
 import { admin } from "./dict/admin";
 import { wizard } from "./dict/wizard";
@@ -26,6 +27,7 @@ export const dictionaries: Record<Locale, Dict> = {
     ...dashboard.pt,
     ...billing.pt,
     ...serversDict.pt,
+    ...containers.pt,
     ...orgsup.pt,
     ...admin.pt,
     ...wizard.pt,
@@ -39,6 +41,7 @@ export const dictionaries: Record<Locale, Dict> = {
     ...dashboard.en,
     ...billing.en,
     ...serversDict.en,
+    ...containers.en,
     ...orgsup.en,
     ...admin.en,
     ...wizard.en,
@@ -52,6 +55,7 @@ export const dictionaries: Record<Locale, Dict> = {
     ...dashboard.es,
     ...billing.es,
     ...serversDict.es,
+    ...containers.es,
     ...orgsup.es,
     ...admin.es,
     ...wizard.es,

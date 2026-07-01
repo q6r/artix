@@ -55,9 +55,13 @@ export function clientIp(request: Request): string | null {
   return request.headers.get("x-real-ip");
 }
 
-/** Headers to forward the client IP + JSON content-type to the backend. */
+/** Headers to forward the client IP + content-type to the backend. Mirrors the
+ * incoming content-type verbatim so a `multipart/form-data; boundary=…` (the
+ * container deploy upload) reaches the backend with its boundary intact. */
 export function forwardHeaders(request: Request): Record<string, string> {
-  const h: Record<string, string> = { "content-type": "application/json" };
+  const h: Record<string, string> = {
+    "content-type": request.headers.get("content-type") ?? "application/json",
+  };
   const ip = clientIp(request);
   if (ip) h["x-forwarded-for"] = ip;
   return h;
@@ -111,7 +115,10 @@ export async function proxyToBackend(request: Request, path: string): Promise<Re
   const jar = await cookies();
   const search = url.search;
   const hasBody = method !== "GET" && method !== "HEAD";
-  const body = hasBody ? await request.text() : undefined;
+  // Binary-safe: request.text() would UTF-8-corrupt a zip upload. Buffering
+  // (not streaming request.body) keeps content-length, which the backend's
+  // multipart parser needs. Round-trips JSON byte-for-byte too.
+  const body = hasBody ? Buffer.from(await request.arrayBuffer()) : undefined;
 
   const call = (accessToken?: string) => {
     const headers = forwardHeaders(request);

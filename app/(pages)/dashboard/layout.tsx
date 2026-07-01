@@ -16,6 +16,7 @@ import DashboardCommand from "@/components/DashboardCommand";
 import { TooltipProvider } from "@/components/animate-ui/components/animate/tooltip";
 import OverviewIcon from "@/components/icons/OverviewIcon";
 import ServersIcon from "@/components/icons/ServersIcon";
+import ContainersIcon from "@/components/icons/ContainersIcon";
 import WalletIcon from "@/components/icons/WalletIcon";
 import OrgsIcon from "@/components/icons/OrgsIcon";
 import AdminIcon from "@/components/icons/AdminIcon";
@@ -28,6 +29,7 @@ import { LogOut } from "@/components/animate-ui/icons/log-out";
 const nav = [
   { labelKey: "dash.nav.overview", href: "/dashboard", icon: OverviewIcon, exact: true },
   { labelKey: "dash.nav.servers", href: "/dashboard/servers", icon: ServersIcon },
+  { labelKey: "cont.nav.title", href: "/dashboard/containers", icon: ContainersIcon },
   { labelKey: "dash.nav.organizations", href: "/dashboard/organizations", icon: OrgsIcon },
   { labelKey: "dash.nav.billing", href: "/dashboard/billing", icon: WalletIcon },
 ];

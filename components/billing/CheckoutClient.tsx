@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, Lock } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Lock, Server as ServerIcon, Boxes } from "lucide-react";
 import FadeIn from "@/components/FadeIn";
 import Skeleton from "@/components/Skeleton";
 import { useLang } from "@/components/LanguageProvider";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
-import { formatMoney, type Checkout, type PlansResponse } from "@/lib/api/types";
+import { formatMoney, type Checkout, type PlansResponse, type Server } from "@/lib/api/types";
 
 type Country = { id: string; name: string; ms: string; soon?: boolean };
 const COUNTRIES: Country[] = [
@@ -54,6 +54,8 @@ export default function CheckoutClient() {
   const router = useRouter();
   const { data: plansData } = useQuery<PlansResponse>("billing/plans");
 
+  // Before the VPS wizard: choose what to host. `null` = show the chooser.
+  const [hostType, setHostType] = useState<"vps" | "container" | null>(null);
   const [step, setStep] = useState(0);
   const [country, setCountry] = useState("br");
   const [osId, setOsId] = useState("ubuntu");
@@ -107,6 +109,9 @@ export default function CheckoutClient() {
       setBusy(false);
     }
   };
+
+  if (hostType === null) return <HostTypeChooser onPick={setHostType} />;
+  if (hostType === "container") return <CreateBotForm onBack={() => setHostType(null)} />;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -646,6 +651,130 @@ function Line({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-center justify-between gap-4">
       <span className="text-white/45">{label}</span>
       <span className="text-right font-medium">{value}</span>
+    </div>
+  );
+}
+
+// ----------------------------- Host type chooser -----------------------------
+
+function HostTypeChooser({ onPick }: { onPick: (t: "vps" | "container") => void }) {
+  const { t } = useLang();
+  return (
+    <div className="mx-auto max-w-3xl space-y-8">
+      <div>
+        <Link
+          href="/dashboard/billing"
+          className="inline-flex items-center gap-1.5 text-sm text-white/50 transition-colors hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" /> {t("cont.back")}
+        </Link>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{t("cont.host.q")}</h1>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <button
+          onClick={() => onPick("vps")}
+          className="group flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-left transition-colors hover:border-white/25 hover:bg-white/[0.04]"
+        >
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+            <ServerIcon className="h-5 w-5 text-white/80" strokeWidth={1.6} />
+          </span>
+          <p className="mt-4 text-lg font-semibold">{t("cont.host.vps")}</p>
+          <p className="mt-1 text-sm text-white/55">{t("cont.host.vpsDesc")}</p>
+          <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-white/70 transition-colors group-hover:text-white">
+            {t("cont.create")} <ArrowRight className="h-4 w-4" />
+          </span>
+        </button>
+        <button
+          onClick={() => onPick("container")}
+          className="group flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-left transition-colors hover:border-white/25 hover:bg-white/[0.04]"
+        >
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+            <Boxes className="h-5 w-5 text-white/80" strokeWidth={1.6} />
+          </span>
+          <div className="mt-4 flex items-center gap-2">
+            <p className="text-lg font-semibold">{t("cont.host.container")}</p>
+            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+              {t("cont.host.free")}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-white/55">{t("cont.host.containerDesc")}</p>
+          <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-white/70 transition-colors group-hover:text-white">
+            {t("cont.create")} <ArrowRight className="h-4 w-4" />
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------- Create free bot -----------------------------
+
+function CreateBotForm({ onBack }: { onBack: () => void }) {
+  const { t } = useLang();
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (busy || !name.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await api<Server>("containers", {
+        method: "POST",
+        json: { name: name.trim(), container_type: "discord_bot", plan: "free" },
+      });
+      void mutate("containers");
+      router.push(`/dashboard/containers/${out.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("cont.error"));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-lg space-y-6">
+      <div>
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 text-sm text-white/50 transition-colors hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" /> {t("cont.back")}
+        </button>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{t("cont.createBot.title")}</h1>
+        <p className="mt-1 text-sm text-white/55">{t("cont.createBot.desc")}</p>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <label className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-white/70">{t("cont.name")}</span>
+          <input
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder={t("cont.namePlaceholder")}
+            className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none focus:border-white/30"
+          />
+        </label>
+        {error && <p className="text-sm text-red-300">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onBack}
+            className="inline-flex h-10 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5"
+          >
+            {t("cont.cancel")}
+          </button>
+          <button
+            onClick={submit}
+            disabled={busy || !name.trim()}
+            className="inline-flex h-10 items-center rounded-xl bg-white px-5 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
+          >
+            {busy ? t("cont.creating") : t("cont.create")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
