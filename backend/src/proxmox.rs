@@ -384,6 +384,8 @@ impl ProxmoxClient {
         let form = [
             ("cores", cores.to_string()),
             ("memory", memory_mb.to_string()),
+            // Auto-start the VM when the host boots.
+            ("onboot", "1".to_string()),
         ];
         self.call(Method::POST, &path, Some(&form)).await?;
         Ok(())
