@@ -33,6 +33,8 @@ pub struct DeployResult {
     pub image: Option<String>,
     pub ram: Option<i64>,
     pub port: Option<i32>,
+    pub subdomain: Option<String>,
+    pub url: Option<String>,
     #[serde(rename = "buildLog", default)]
     pub build_log: Option<String>,
 }
@@ -96,17 +98,21 @@ impl AgentClient {
         env_json: String,
         cpus: f64,
         ram_cap: i64,
+        subdomain: Option<&str>,
     ) -> AppResult<DeployResult> {
         let part = reqwest::multipart::Part::bytes(zip)
             .file_name("bundle.zip")
             .mime_str("application/zip")
             .map_err(|e| AppError::Internal(format!("agent part: {e}")))?;
-        let form = reqwest::multipart::Form::new()
+        let mut form = reqwest::multipart::Form::new()
             .part("bundle", part)
             .text("env", env_json)
             .text("cpus", cpus.to_string())
             // Authoritative RAM cap (MB); the agent clamps .artix RAM to it.
             .text("ramCap", ram_cap.to_string());
+        if let Some(sub) = subdomain {
+            form = form.text("subdomain", sub.to_string());
+        }
         let res = self
             .http
             .post(format!("{}/apps/{}/deploy", self.base, id))

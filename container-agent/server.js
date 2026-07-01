@@ -16,6 +16,9 @@ const TOKEN = process.env.AGENT_TOKEN || "";
 const PORT = parseInt(process.env.AGENT_PORT || "9090", 10);
 const APPS_DIR = process.env.APPS_DIR || "/srv/apps";
 const ENV_DIR = process.env.ENV_DIR || "/srv/env";
+// Sites are reverse-proxied by Traefik at <subdomain>.APPS_DOMAIN over this network.
+const APPS_DOMAIN = process.env.APPS_DOMAIN || "apps.artix.cloud";
+const WEB_NETWORK = process.env.WEB_NETWORK || "artix-web";
 
 // Supported runtimes -> official base image (VERSION from .artix picks the tag).
 const RUNTIMES = {
@@ -181,7 +184,24 @@ app.post("/apps/:id/deploy", upload.single("bundle"), async (req, res) => {
     "--label", "artix.managed=1",
     "--label", `artix.type=${type}`,
   ];
-  if (type === "site" && a.PORT) createArgs.push("--label", `artix.port=${a.PORT}`);
+  // Sites join the Traefik network and get host-routing labels so
+  // <subdomain>.APPS_DOMAIN reaches them on their internal PORT.
+  const subdomain =
+    String(req.body.subdomain || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "")
+      .slice(0, 63) || id;
+  if (type === "site" && a.PORT) {
+    createArgs.push(
+      "--network", WEB_NETWORK,
+      "--label", "traefik.enable=true",
+      "--label", `traefik.http.routers.${id}.rule=Host(\`${subdomain}.${APPS_DOMAIN}\`)`,
+      "--label", `traefik.http.routers.${id}.entrypoints=web`,
+      "--label", `traefik.http.services.${id}.loadbalancer.server.port=${a.PORT}`,
+      "--label", `artix.port=${a.PORT}`,
+      "--label", `artix.subdomain=${subdomain}`,
+    );
+  }
   createArgs.push(image, "sh", "-lc", a.START);
 
   const create = await docker(createArgs);
@@ -189,7 +209,19 @@ app.post("/apps/:id/deploy", upload.single("bundle"), async (req, res) => {
   const start = await docker(["start", cname(id)]);
   if (start.code !== 0) return res.status(500).json({ error: "start failed", detail: start.stderr });
 
-  res.json({ ok: true, id, name: a.NAME || id, type, runtime, image, ram, port: a.PORT || null, buildLog });
+  res.json({
+    ok: true,
+    id,
+    name: a.NAME || id,
+    type,
+    runtime,
+    image,
+    ram,
+    port: a.PORT || null,
+    subdomain: type === "site" ? subdomain : null,
+    url: type === "site" ? `https://${subdomain}.${APPS_DOMAIN}` : null,
+    buildLog,
+  });
 });
 
 app.post("/apps/:id/action", async (req, res) => {

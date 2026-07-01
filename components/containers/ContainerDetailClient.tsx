@@ -14,6 +14,7 @@ import {
   Plus,
   Cpu,
   MemoryStick,
+  ExternalLink,
 } from "lucide-react";
 import FadeIn from "@/components/FadeIn";
 import Skeleton from "@/components/Skeleton";
@@ -153,6 +154,21 @@ function Overview({ id, c }: { id: string; c: Server }) {
           <Trash2 className="h-4 w-4" /> {t("cont.action.delete")}
         </button>
       </div>
+
+      {c.container?.container_type === "site" && c.container?.subdomain && (
+        <a
+          href={`https://${c.container.subdomain}.apps.artix.cloud`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm transition-colors hover:bg-white/[0.04]"
+        >
+          <span className="text-white/55">{t("cont.ov.url")}</span>
+          <span className="inline-flex items-center gap-1.5 truncate font-mono text-xs text-sky-300">
+            {c.container.subdomain}.apps.artix.cloud
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+          </span>
+        </a>
+      )}
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm">
         <div className="flex items-center justify-between gap-3">

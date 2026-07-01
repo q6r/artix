@@ -712,7 +712,9 @@ function HostTypeChooser({ onPick }: { onPick: (t: "vps" | "container") => void 
 function CreateBotForm({ onBack }: { onBack: () => void }) {
   const { t } = useLang();
   const router = useRouter();
+  const [ctype, setCtype] = useState<"discord_bot" | "site">("discord_bot");
   const [name, setName] = useState("");
+  const [subdomain, setSubdomain] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -723,7 +725,12 @@ function CreateBotForm({ onBack }: { onBack: () => void }) {
     try {
       const out = await api<Server>("containers", {
         method: "POST",
-        json: { name: name.trim(), container_type: "discord_bot", plan: "free" },
+        json: {
+          name: name.trim(),
+          container_type: ctype,
+          plan: "free",
+          ...(ctype === "site" && subdomain.trim() ? { subdomain: subdomain.trim() } : {}),
+        },
       });
       void mutate("containers");
       router.push(`/dashboard/containers/${out.id}`);
@@ -732,6 +739,13 @@ function CreateBotForm({ onBack }: { onBack: () => void }) {
       setBusy(false);
     }
   };
+
+  const seg = (active: boolean) =>
+    `flex-1 rounded-xl border px-4 py-3 text-left transition-colors ${
+      active
+        ? "border-white/30 bg-white/[0.06]"
+        : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"
+    }`;
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -742,11 +756,29 @@ function CreateBotForm({ onBack }: { onBack: () => void }) {
         >
           <ArrowLeft className="h-4 w-4" /> {t("cont.back")}
         </button>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{t("cont.createBot.title")}</h1>
-        <p className="mt-1 text-sm text-white/55">{t("cont.createBot.desc")}</p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{t("cont.create.title")}</h1>
+        <p className="mt-1 text-sm text-white/55">{t("cont.create.desc")}</p>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+      <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <div>
+          <span className="mb-2 block text-sm font-medium text-white/70">{t("cont.type.q")}</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setCtype("discord_bot")}
+              className={seg(ctype === "discord_bot")}
+            >
+              <span className="text-sm font-medium">{t("cont.type.bot")}</span>
+              <span className="mt-0.5 block text-xs text-white/45">{t("cont.type.botDesc")}</span>
+            </button>
+            <button type="button" onClick={() => setCtype("site")} className={seg(ctype === "site")}>
+              <span className="text-sm font-medium">{t("cont.type.site")}</span>
+              <span className="mt-0.5 block text-xs text-white/45">{t("cont.type.siteDesc")}</span>
+            </button>
+          </div>
+        </div>
+
         <label className="flex flex-col gap-2">
           <span className="text-sm font-medium text-white/70">{t("cont.name")}</span>
           <input
@@ -758,6 +790,25 @@ function CreateBotForm({ onBack }: { onBack: () => void }) {
             className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none focus:border-white/30"
           />
         </label>
+
+        {ctype === "site" && (
+          <label className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-white/70">{t("cont.subdomain")}</span>
+            <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 focus-within:border-white/30">
+              <input
+                value={subdomain}
+                onChange={(e) =>
+                  setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+                }
+                placeholder={t("cont.subdomainPlaceholder")}
+                className="h-11 flex-1 bg-transparent text-sm outline-none"
+              />
+              <span className="shrink-0 text-sm text-white/40">.apps.artix.cloud</span>
+            </div>
+            <span className="text-xs text-white/40">{t("cont.subdomainHint")}</span>
+          </label>
+        )}
+
         {error && <p className="text-sm text-red-300">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <button

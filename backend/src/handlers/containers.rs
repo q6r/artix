@@ -51,6 +51,10 @@ pub struct CreateContainerReq {
     pub container_type: String,
     #[serde(default)]
     pub plan: String,
+    /// Desired subdomain for sites (<subdomain>.apps.artix.cloud). Optional;
+    /// defaults to the app id. Ignored for bots.
+    #[serde(default)]
+    pub subdomain: Option<String>,
 }
 
 pub async fn create(
@@ -63,10 +67,40 @@ pub async fn create(
         return Err(AppError::Validation("name required".into()));
     }
     let ctype = req.container_type.trim().to_lowercase();
-    if ctype != "discord_bot" {
-        return Err(AppError::Validation(
-            "only discord_bot containers are available for now".into(),
-        ));
+    if ctype != "discord_bot" && ctype != "site" {
+        return Err(AppError::Validation("invalid container type".into()));
+    }
+
+    // Sites get a subdomain (validated + unique). Bots don't.
+    let mut subdomain: Option<String> = None;
+    if ctype == "site" {
+        let raw: String = req
+            .subdomain
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect();
+        let raw = raw.trim_matches('-').to_string();
+        if !raw.is_empty() {
+            if raw.len() < 3 || raw.len() > 63 {
+                return Err(AppError::Validation(
+                    "subdomain must be 3–63 characters".into(),
+                ));
+            }
+            let taken = state
+                .db
+                .servers()
+                .count_documents(doc! { "type": 1, "container.subdomain": &raw })
+                .await?;
+            if taken > 0 {
+                return Err(AppError::Conflict("subdomain already taken".into()));
+            }
+            subdomain = Some(raw);
+        }
+        // if empty, defaults to the app id after insert (below)
     }
     let plan = if req.plan.trim().is_empty() {
         "free".to_string()
@@ -127,9 +161,9 @@ pub async fn create(
         },
         server_type: 1,
         container: Some(Container {
-            container_type: ctype,
+            container_type: ctype.clone(),
             app_id: String::new(), // filled after insert (= _id hex)
-            subdomain: None,
+            subdomain: subdomain.clone(),
             runtime: None,
             version: None,
             ram_mb: Some(ram_mb),
@@ -152,19 +186,27 @@ pub async fn create(
         .as_object_id()
         .ok_or_else(|| AppError::Internal("insert id".into()))?;
     let app_id = id.to_hex();
+    // A site with no chosen subdomain defaults to its app id.
+    let final_sub = if ctype == "site" {
+        subdomain.clone().or_else(|| Some(app_id.clone()))
+    } else {
+        None
+    };
+    let mut set = doc! { "container.app_id": &app_id };
+    if let Some(s) = &final_sub {
+        set.insert("container.subdomain", s);
+    }
     state
         .db
         .servers()
-        .update_one(
-            doc! { "_id": id },
-            doc! { "$set": { "container.app_id": &app_id } },
-        )
+        .update_one(doc! { "_id": id }, doc! { "$set": set })
         .await?;
 
     let mut created = server;
     created.id = Some(id);
     if let Some(c) = created.container.as_mut() {
         c.app_id = app_id;
+        c.subdomain = final_sub;
     }
     Ok(Json(created.public()))
 }
@@ -223,9 +265,14 @@ pub async fn deploy(
     mut mp: Multipart,
 ) -> AppResult<Json<crate::agent::DeployResult>> {
     let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
-    let (app_id, env_json, ram_cap) = {
+    let (app_id, env_json, ram_cap, subdomain) = {
         let c = require_container(&server)?;
-        (c.app_id.clone(), env_to_json(&c.env), c.ram_mb.unwrap_or(256))
+        (
+            c.app_id.clone(),
+            env_to_json(&c.env),
+            c.ram_mb.unwrap_or(256),
+            c.subdomain.clone(),
+        )
     };
     let ag = agent(&state)?;
 
@@ -262,27 +309,30 @@ pub async fn deploy(
 
     // ram_cap is authoritative — the agent clamps the .artix RAM to it so a user
     // can't request more than their plan allows.
-    let dep = ag.deploy(&app_id, zip, env_json, cpus, ram_cap).await?;
+    let dep = ag
+        .deploy(&app_id, zip, env_json, cpus, ram_cap, subdomain.as_deref())
+        .await?;
 
     // Persist echoed metadata + mark deployed/running.
     let now = Utc::now();
+    let mut set = doc! {
+        "container.runtime": dep.runtime.clone(),
+        "container.image": dep.image.clone(),
+        "container.build_log": dep.build_log.clone(),
+        "container.port": dep.port,
+        "container.ram_mb": dep.ram,
+        "container.status": "running",
+        "container.deployed": true,
+        "state": "running",
+        "updated_at": bson::DateTime::from_chrono(now),
+    };
+    if let Some(s) = &dep.subdomain {
+        set.insert("container.subdomain", s);
+    }
     let _ = state
         .db
         .servers()
-        .update_one(
-            doc! { "_id": server.id.unwrap() },
-            doc! { "$set": {
-                "container.runtime": dep.runtime.clone(),
-                "container.image": dep.image.clone(),
-                "container.build_log": dep.build_log.clone(),
-                "container.port": dep.port,
-                "container.ram_mb": dep.ram,
-                "container.status": "running",
-                "container.deployed": true,
-                "state": "running",
-                "updated_at": bson::DateTime::from_chrono(now),
-            }},
-        )
+        .update_one(doc! { "_id": server.id.unwrap() }, doc! { "$set": set })
         .await?;
 
     Ok(Json(dep))
