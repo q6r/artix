@@ -45,6 +45,10 @@ fn require_vmid(server: &Server) -> AppResult<i64> {
 /// template, size it, apply cloud-init (stored SSH key only), boot it, and
 /// record the assigned `vmid`. Idempotent enough to retry on failure.
 pub async fn provision(state: &AppState, server: &Server) -> AppResult<()> {
+    // Containers never touch Proxmox — they deploy via the container agent.
+    if server.server_type == 1 {
+        return Ok(());
+    }
     let px = state
         .proxmox
         .as_ref()
@@ -208,6 +212,8 @@ pub async fn create(
         ssh_port: None,
         storage: Some(storage.clone()),
         specs,
+        server_type: 0,
+        container: None,
         expires_at: None,
         created_at: now,
         updated_at: now,
@@ -250,6 +256,8 @@ pub async fn list(
 
     let filter = doc! {
         "state": { "$ne": "pending_payment" },
+        // VPS only — containers ($type == 1) have their own /containers list.
+        "type": { "$ne": 1 },
         "$or": [
             { "user_id": auth.user_id },
             { "org_id": { "$in": &org_ids } },
@@ -366,9 +374,12 @@ pub async fn get(
     }
 
     // Ensure the public SSH tunnel exists (allocates a relay port on first call).
-    if let Ok(Some((host, port))) = crate::frp::ensure(&state, &server).await {
-        server.ssh_host = Some(host);
-        server.ssh_port = Some(port);
+    // VPS only — containers have no vmid/relay.
+    if server.server_type == 0 {
+        if let Ok(Some((host, port))) = crate::frp::ensure(&state, &server).await {
+            server.ssh_host = Some(host);
+            server.ssh_port = Some(port);
+        }
     }
 
     Ok(Json(server.public()))

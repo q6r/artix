@@ -210,6 +210,8 @@ pub async fn create_subscription(
         ssh_port: None,
         storage: None,
         specs,
+        server_type: 0,
+        container: None,
         expires_at: None, // billing-driven; subscription controls the lifecycle
         created_at: now,
         updated_at: now,

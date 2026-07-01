@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod auth;
 pub mod authn;
 pub mod billing;
@@ -23,6 +24,7 @@ pub mod storage;
 pub mod ws;
 
 use axum::{
+    extract::DefaultBodyLimit,
     http::{header, HeaderName, HeaderValue, Method},
     middleware::from_fn_with_state,
     routing::{delete, get, patch, post, put},
@@ -30,7 +32,7 @@ use axum::{
 };
 use bson::doc;
 use chrono::Utc;
-use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::{db::Collections, models::Role, state::AppState};
 
@@ -265,6 +267,29 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::dedicated_ip::get).post(handlers::dedicated_ip::buy),
         )
         .route("/servers/:id/upgrade", post(handlers::upgrade::buy))
+        // Containers (server_type = 1). Ownership via the same access()/server_perm.
+        .route(
+            "/containers",
+            get(handlers::containers::list).post(handlers::containers::create),
+        )
+        .route(
+            "/containers/:id",
+            get(handlers::containers::get).delete(handlers::containers::delete),
+        )
+        .route("/containers/:id/status", get(handlers::containers::status))
+        .route("/containers/:id/stats", get(handlers::containers::stats))
+        .route("/containers/:id/logs", get(handlers::containers::logs))
+        .route("/containers/:id/action", post(handlers::containers::action))
+        .route(
+            "/containers/:id/env",
+            get(handlers::containers::get_env).put(handlers::containers::set_env),
+        )
+        // Deploy uploads a zip; raise the body cap for THIS route only (the
+        // global DefaultBodyLimit still guards everything else).
+        .route(
+            "/containers/:id/deploy",
+            post(handlers::containers::deploy).layer(DefaultBodyLimit::max(100 * 1024 * 1024)),
+        )
         .route(
             "/keys",
             get(handlers::keys::list).post(handlers::keys::create),
@@ -353,6 +378,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(from_fn_with_state(state.clone(), headers::security_headers))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
-        .layer(RequestBodyLimitLayer::new(64 * 1024))
+        // Per-route-overridable default body cap (the container deploy route
+        // raises it). Extractors (Json/Multipart/Bytes) enforce it.
+        .layer(DefaultBodyLimit::max(64 * 1024))
         .with_state(state)
 }

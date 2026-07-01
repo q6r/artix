@@ -291,6 +291,14 @@ pub struct Server {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh_port: Option<i32>,
     pub specs: ServerSpecs,
+    /// Product discriminator: 0 = VPS (Proxmox VM), 1 = Container (Docker agent).
+    /// `#[serde(default)]` makes every existing VPS doc (which has no `type`
+    /// field) deserialize as 0 — do NOT remove the default.
+    #[serde(default, rename = "type")]
+    pub server_type: i32,
+    /// Container-specific sub-document. Absent/`None` for VPS docs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<Container>,
     /// When the VPS expires. `None` = lifetime (vitalícia). Setting/keeping this
     /// `None` requires the `nodes.lifetime` permission.
     #[serde(
@@ -309,6 +317,58 @@ pub struct ServerSpecs {
     pub vcpu: u16,
     pub ram_gb: u32,
     pub disk_gb: u32,
+}
+
+/// Embedded container metadata (present only when `server_type == 1`). The agent
+/// `app id` is always the Server `_id` hex; it is mirrored in `app_id` so we
+/// never re-derive it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Container {
+    /// "site" | "discord_bot" (phase-1 only creates "discord_bot").
+    pub container_type: String,
+    pub app_id: String,
+    /// Reserved for the *.apps.artix.cloud wave. `None` for bots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdomain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// RAM cap in MB (containers track MB, not GB like VPS specs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ram_mb: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_log: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+    /// Exposed internal port (sites, later). `None` for bots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<i32>,
+    /// Last-known runtime status from the agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Environment variables (JSON object stored as a BSON sub-document).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<bson::Document>,
+    /// True once a bundle has been deployed at least once.
+    #[serde(default)]
+    pub deployed: bool,
+}
+
+/// What the frontend sees for a container (no build_log/env in the projection).
+#[derive(Debug, Clone, Serialize)]
+pub struct ContainerPublic {
+    pub container_type: String,
+    pub app_id: String,
+    pub runtime: Option<String>,
+    pub version: Option<String>,
+    pub ram_mb: Option<i64>,
+    pub port: Option<i32>,
+    pub status: Option<String>,
+    pub subdomain: Option<String>,
+    pub deployed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -331,6 +391,11 @@ pub struct ServerPublic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_port: Option<i32>,
     pub specs: ServerSpecs,
+    /// 0 = VPS, 1 = Container — lets the dashboard branch the UI.
+    #[serde(rename = "type")]
+    pub server_type: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container: Option<ContainerPublic>,
     /// Expiry timestamp, or `null` for a lifetime VPS.
     pub expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -352,6 +417,18 @@ impl Server {
             ssh_host: self.ssh_host.clone(),
             ssh_port: self.ssh_port,
             specs: self.specs.clone(),
+            server_type: self.server_type,
+            container: self.container.as_ref().map(|c| ContainerPublic {
+                container_type: c.container_type.clone(),
+                app_id: c.app_id.clone(),
+                runtime: c.runtime.clone(),
+                version: c.version.clone(),
+                ram_mb: c.ram_mb,
+                port: c.port,
+                status: c.status.clone(),
+                subdomain: c.subdomain.clone(),
+                deployed: c.deployed,
+            }),
             expires_at: self.expires_at,
             created_at: self.created_at,
         }

@@ -31,6 +31,8 @@ pub struct AppState {
     pub stripe: Option<StripeClient>,
     /// `None` when the frp relay is not configured (public SSH disabled).
     pub frp: Option<Frp>,
+    /// `None` when the container agent (Docker VM) is not configured.
+    pub agent: Option<crate::agent::AgentClient>,
     /// Real-time event hub for the WebSocket gateway.
     pub hub: broadcast::Sender<WsEvent>,
 }
@@ -42,6 +44,7 @@ impl AppState {
         let crypto = CryptoClient::from_config(&cfg);
         let stripe = StripeClient::from_config(&cfg);
         let frp = Frp::from_config(&cfg);
+        let agent = crate::agent::AgentClient::from_config(&cfg);
         Self {
             cfg: Arc::new(cfg),
             db,
@@ -52,6 +55,7 @@ impl AppState {
             crypto,
             stripe,
             frp,
+            agent,
             hub: crate::ws::hub(),
         }
     }

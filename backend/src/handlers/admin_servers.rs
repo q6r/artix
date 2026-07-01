@@ -209,6 +209,8 @@ pub async fn create_server(
         ssh_port: None,
         storage: Some(storage.clone()),
         specs,
+        server_type: 0,
+        container: None,
         expires_at,
         created_at: now,
         updated_at: now,
@@ -436,6 +438,13 @@ pub async fn delete_server(
         }
         if let Ok(upid) = px.delete(vmid).await {
             let _ = px.wait_task(&upid).await;
+        }
+    }
+
+    // Container: reap the Docker container on the agent so it doesn't orphan.
+    if server.server_type == 1 {
+        if let (Some(c), Some(ag)) = (server.container.as_ref(), state.agent.as_ref()) {
+            let _ = ag.delete(&c.app_id).await;
         }
     }
 

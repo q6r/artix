@@ -51,7 +51,11 @@ function parseArtix(text) {
 }
 
 function writeEnv(id, env) {
-  const lines = Object.entries(env || {}).map(([k, v]) => `${k}=${String(v)}`);
+  // Defense-in-depth: only well-formed keys and single-line values (the backend
+  // validates too, but never trust the caller for something that becomes a file).
+  const lines = Object.entries(env || {})
+    .filter(([k, v]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && !/[\n\r\0]/.test(String(v)))
+    .map(([k, v]) => `${k}=${String(v)}`);
   const p = path.join(ENV_DIR, `${id}.env`);
   fs.writeFileSync(p, lines.join("\n") + "\n", { mode: 0o600 });
   return p;
@@ -113,7 +117,11 @@ app.post("/apps/:id/deploy", upload.single("bundle"), async (req, res) => {
   const image = RUNTIMES[runtime] ? RUNTIMES[runtime](a.VERSION) : null;
   if (!image) return res.status(400).json({ error: "unsupported RUNTIME: " + runtime });
   if (!a.START) return res.status(400).json({ error: "START missing in .artix" });
-  const ram = Math.max(64, parseInt(a.RAM || "256", 10) || 256);
+  // RAM: the .artix value, but clamped to the authoritative cap the backend
+  // passes (the plan limit) so a user can't over-request via .artix.
+  const cap = Math.max(0, parseInt(req.body.ramCap || "0", 10) || 0);
+  let ram = Math.max(64, parseInt(a.RAM || "256", 10) || 256);
+  if (cap > 0) ram = Math.min(ram, cap);
 
   let env = {};
   try {

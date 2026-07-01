@@ -99,6 +99,9 @@ pub struct Config {
     pub pagci_wallet_id: String,
     pub pagci_wallet_name: String,
     pub pagci_webhook_secret: String,
+    /// Container agent (Docker VM) base URL + bearer token. Empty = disabled.
+    pub container_agent_url: String,
+    pub container_agent_token: String,
     pub billing_currency: String,
     /// Days a customer has to pay an invoice before the VPS is suspended.
     pub billing_grace_days: i64,
@@ -234,6 +237,8 @@ impl Config {
             pagci_wallet_id: opt("PAGCI_WALLET_ID", ""),
             pagci_wallet_name: opt("PAGCI_WALLET_NAME", "artix"),
             pagci_webhook_secret: opt("PAGCI_WEBHOOK_SECRET", ""),
+            container_agent_url: opt("CONTAINER_AGENT_URL", ""),
+            container_agent_token: opt("CONTAINER_AGENT_TOKEN", ""),
             billing_currency: opt("BILLING_CURRENCY", "BRL"),
             billing_grace_days: parse("BILLING_GRACE_DAYS", 3i64)?,
             billing_renew_lead_days: parse("BILLING_RENEW_LEAD_DAYS", 3i64)?,
