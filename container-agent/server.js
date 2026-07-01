@@ -217,7 +217,7 @@ app.post("/apps/:id/deploy", upload.single("bundle"), async (req, res) => {
     runtime,
     image,
     ram,
-    port: a.PORT || null,
+    port: a.PORT ? parseInt(a.PORT, 10) || null : null,
     subdomain: type === "site" ? subdomain : null,
     url: type === "site" ? `https://${subdomain}.${APPS_DOMAIN}` : null,
     buildLog,
