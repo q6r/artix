@@ -76,6 +76,19 @@ pub async fn create(
     // Free tier RAM cap (MB). Plan-based limits get richer in the anti-abuse wave.
     let ram_mb = 256i64;
 
+    // Per-user quota (anti-abuse). Refined per-plan later.
+    const MAX_CONTAINERS_PER_USER: u64 = 3;
+    let owned = state
+        .db
+        .servers()
+        .count_documents(doc! { "type": 1, "user_id": auth.user_id })
+        .await?;
+    if owned >= MAX_CONTAINERS_PER_USER {
+        return Err(AppError::Conflict(
+            "container limit reached for your account".into(),
+        ));
+    }
+
     let now = Utc::now();
     let server = Server {
         id: None,

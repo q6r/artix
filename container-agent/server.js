@@ -24,6 +24,12 @@ const RUNTIMES = {
   // extend later: go, rust, java, php...
 };
 
+// Fail closed: refuse to start without a bearer token (never serve unauthenticated).
+if (!TOKEN) {
+  console.error("AGENT_TOKEN is required — refusing to start.");
+  process.exit(1);
+}
+
 fs.mkdirSync(APPS_DIR, { recursive: true });
 fs.mkdirSync(ENV_DIR, { recursive: true });
 
@@ -59,6 +65,17 @@ function writeEnv(id, env) {
   const p = path.join(ENV_DIR, `${id}.env`);
   fs.writeFileSync(p, lines.join("\n") + "\n", { mode: 0o600 });
   return p;
+}
+
+// Reject bundles containing symlinks: they would be honored via the `-v dir:/app`
+// mount and could read the Docker VM's host files (defense-in-depth beyond
+// adm-zip's own path-traversal guard).
+async function hasSymlink(dir) {
+  for (const e of await fsp.readdir(dir, { withFileTypes: true })) {
+    if (e.isSymbolicLink()) return true;
+    if (e.isDirectory() && (await hasSymlink(path.join(dir, e.name)))) return true;
+  }
+  return false;
 }
 
 // If the zip unpacked to a single top-level folder (no .artix at root), flatten it.
@@ -100,6 +117,10 @@ app.post("/apps/:id/deploy", upload.single("bundle"), async (req, res) => {
     fs.mkdirSync(dir, { recursive: true });
     new AdmZip(req.file.path).extractAllTo(dir, true);
     await fsp.rm(req.file.path, { force: true }).catch(() => {});
+    if (await hasSymlink(dir)) {
+      await fsp.rm(dir, { recursive: true, force: true });
+      return res.status(400).json({ error: "bundle contains symlinks (not allowed)" });
+    }
     await maybeFlatten(dir);
   } catch (e) {
     return res.status(400).json({ error: "extract failed: " + e.message });

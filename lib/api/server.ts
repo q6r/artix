@@ -91,26 +91,40 @@ async function tryRefresh(): Promise<string | null> {
  * Forward an incoming Next request to the backend with the user's access token,
  * refreshing once on 401. Returns a Response mirroring the backend's status/body.
  */
+/**
+ * CSRF defense-in-depth for state-changing requests: they must originate from
+ * our own origin. Returns a 403 Response to short-circuit, or `null` if allowed.
+ * Applied by `proxyToBackend` AND directly by the dedicated auth route handlers
+ * (which don't go through the proxy).
+ */
+export function csrfBlock(request: Request): Response | null {
+  const method = request.method.toUpperCase();
+  if (method === "GET" || method === "HEAD") return null;
+  const url = new URL(request.url);
+  const site = request.headers.get("sec-fetch-site");
+  const origin = request.headers.get("origin");
+  // Behind a proxy, `request.url` resolves to the internal bind
+  // (localhost:3000), so compare against the public Host/proto headers.
+  const fwdHost = request.headers.get("host");
+  const fwdProto = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
+  const expectedOrigin = fwdHost ? `${fwdProto}://${fwdHost}` : url.origin;
+  const sameSite = site ? site === "same-origin" || site === "same-site" : null;
+  const okOrigin = origin ? origin === expectedOrigin : null;
+  if (sameSite === false || okOrigin === false) {
+    return Response.json(
+      { error: { code: "forbidden", message: "cross-site request blocked" } },
+      { status: 403 },
+    );
+  }
+  return null;
+}
+
 export async function proxyToBackend(request: Request, path: string): Promise<Response> {
   const url = new URL(request.url);
   const method = request.method.toUpperCase();
 
-  // CSRF defense-in-depth: state-changing requests must originate from our own
-  // origin (cookies are SameSite=Lax, but we don't rely on that alone).
-  if (method !== "GET" && method !== "HEAD") {
-    const site = request.headers.get("sec-fetch-site");
-    const origin = request.headers.get("origin");
-    // Behind a proxy, `request.url` resolves to the internal bind
-    // (localhost:3000), so compare against the public Host/proto headers.
-    const fwdHost = request.headers.get("host");
-    const fwdProto = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
-    const expectedOrigin = fwdHost ? `${fwdProto}://${fwdHost}` : url.origin;
-    const sameSite = site ? site === "same-origin" || site === "same-site" : null;
-    const okOrigin = origin ? origin === expectedOrigin : null;
-    if (sameSite === false || okOrigin === false) {
-      return Response.json({ error: { code: "forbidden", message: "cross-site request blocked" } }, { status: 403 });
-    }
-  }
+  const blocked = csrfBlock(request);
+  if (blocked) return blocked;
 
   const jar = await cookies();
   const search = url.search;

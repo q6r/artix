@@ -272,7 +272,14 @@ pub async fn list(
         let s = cursor.deserialize_current()?;
         if let Some(id) = s.id {
             if seen.insert(id) {
-                out.push(s.public());
+                let mut p = s.public();
+                // The initial root password is only ever shown to the owner, not
+                // to org members / grantees who share the server.
+                if s.user_id != auth.user_id {
+                    p.root_password = None;
+                    p.root_user = None;
+                }
+                out.push(p);
             }
         }
     }
@@ -382,7 +389,13 @@ pub async fn get(
         }
     }
 
-    Ok(Json(server.public()))
+    let mut p = server.public();
+    // The initial root password is only ever shown to the owner.
+    if server.user_id != auth.user_id {
+        p.root_password = None;
+        p.root_user = None;
+    }
+    Ok(Json(p))
 }
 
 #[derive(Deserialize)]

@@ -7,9 +7,11 @@
 
 use std::time::Duration;
 
+use chrono::Utc;
 use hmac::{Hmac, Mac};
 use serde_json::Value;
 use sha2::Sha256;
+use subtle::ConstantTimeEq;
 
 use crate::{
     config::Config,
@@ -113,6 +115,12 @@ impl StripeClient {
         if t.is_empty() || sigs.is_empty() {
             return false;
         }
+        // Replay protection: reject events whose timestamp is outside a 5-minute
+        // tolerance (Stripe's recommended default).
+        match t.parse::<i64>() {
+            Ok(ts) if (Utc::now().timestamp() - ts).abs() <= 300 => {}
+            _ => return false,
+        }
         let mut mac = match Hmac::<Sha256>::new_from_slice(self.webhook_secret.as_bytes()) {
             Ok(m) => m,
             Err(_) => return false,
@@ -120,7 +128,12 @@ impl StripeClient {
         mac.update(t.as_bytes());
         mac.update(b".");
         mac.update(payload);
-        let expected = hex::encode(mac.finalize().into_bytes());
-        sigs.iter().any(|s| s.eq_ignore_ascii_case(&expected))
+        let expected = mac.finalize().into_bytes();
+        // Constant-time comparison of the decoded signature bytes.
+        sigs.iter().any(|s| {
+            hex::decode(s).ok().is_some_and(|provided| {
+                provided.len() == expected.len() && provided.ct_eq(&expected).unwrap_u8() == 1
+            })
+        })
     }
 }
