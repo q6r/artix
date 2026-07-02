@@ -724,8 +724,9 @@ pub async fn logout_all(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-pub async fn me(auth: AuthUser) -> Json<UserPublic> {
-    Json(auth.public())
+pub async fn me(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json<UserPublic>> {
+    // Use the async builder so linked-account flags (Discord/GitHub) are correct.
+    Ok(Json(public_user(&state, &auth.user).await?))
 }
 
 #[derive(Deserialize)]
@@ -751,9 +752,9 @@ pub async fn update_profile(
             doc! { "$set": { "display_name": &name, "updated_at": bson::DateTime::from_chrono(Utc::now()) }},
         )
         .await?;
-    let mut public = auth.public();
-    public.display_name = name;
-    Ok(Json(public))
+    let mut user = auth.user.clone();
+    user.display_name = name;
+    Ok(Json(public_user(&state, &user).await?))
 }
 
 pub async fn verify_email(

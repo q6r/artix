@@ -75,6 +75,7 @@ export const containers = {
     "cont.deploy.branch": "Branch (opcional)",
     "cont.deploy.branchPlaceholder": "padrão do repositório",
     "cont.deploy.deployFromGithub": "Fazer deploy do repositório",
+    "cont.deploy.private": "Repositório privado",
     // logs
     "cont.logs.empty": "Sem logs ainda.",
     "cont.logs.refresh": "Atualizar",
@@ -162,6 +163,7 @@ export const containers = {
     "cont.deploy.branch": "Branch (optional)",
     "cont.deploy.branchPlaceholder": "repo default",
     "cont.deploy.deployFromGithub": "Deploy from repository",
+    "cont.deploy.private": "Private repository",
     "cont.logs.empty": "No logs yet.",
     "cont.logs.refresh": "Refresh",
     "cont.env.hint": "Variables injected into the container. Restart or redeploy to apply.",
@@ -246,6 +248,7 @@ export const containers = {
     "cont.deploy.branch": "Rama (opcional)",
     "cont.deploy.branchPlaceholder": "por defecto del repo",
     "cont.deploy.deployFromGithub": "Desplegar desde el repositorio",
+    "cont.deploy.private": "Repositorio privado",
     "cont.logs.empty": "Aún no hay logs.",
     "cont.logs.refresh": "Actualizar",
     "cont.env.hint": "Variables inyectadas en el container. Reinicia o vuelve a desplegar para aplicar.",

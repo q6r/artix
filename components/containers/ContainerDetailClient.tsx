@@ -15,8 +15,10 @@ import {
   Cpu,
   MemoryStick,
   ExternalLink,
+  Lock,
 } from "lucide-react";
 import GithubIcon from "@/components/icons/GithubIcon";
+import Select from "@/components/Select";
 import FadeIn from "@/components/FadeIn";
 import Skeleton from "@/components/Skeleton";
 import { useLang } from "@/components/LanguageProvider";
@@ -329,6 +331,7 @@ function GithubDeploy({
   const { data: repos, loading } = useQuery<GithubRepo[]>(
     linked ? "account/github/repos" : null,
   );
+  const selected = (repos ?? []).find((r) => r.full_name === repo);
 
   const connect = async () => {
     try {
@@ -376,19 +379,18 @@ function GithubDeploy({
     <div className="space-y-3">
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium text-white/70">{t("cont.deploy.repo")}</span>
-        <select
+        <Select
           value={repo}
-          onChange={(e) => setRepo(e.target.value)}
-          className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-white/30 [color-scheme:dark]"
-        >
-          <option value="">{loading ? t("cont.deploy.loadingRepos") : t("cont.deploy.pickRepo")}</option>
-          {(repos ?? []).map((r) => (
-            <option key={r.full_name} value={r.full_name}>
-              {r.full_name}
-              {r.private ? " 🔒" : ""}
-            </option>
-          ))}
-        </select>
+          onChange={setRepo}
+          placeholder={loading ? t("cont.deploy.loadingRepos") : t("cont.deploy.pickRepo")}
+          className="h-11"
+          options={(repos ?? []).map((r) => ({ value: r.full_name, label: r.full_name }))}
+        />
+        {selected?.private && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-white/45">
+            <Lock className="h-3.5 w-3.5" /> {t("cont.deploy.private")}
+          </span>
+        )}
       </label>
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium text-white/70">{t("cont.deploy.branch")}</span>
