@@ -18,6 +18,7 @@ pub mod pagci;
 pub mod permissions;
 pub mod proxmox;
 pub mod ratelimit;
+pub mod secretbox;
 pub mod security;
 pub mod state;
 pub mod storage;
@@ -290,6 +291,11 @@ pub fn build_router(state: AppState) -> Router {
             "/containers/:id/deploy",
             post(handlers::containers::deploy).layer(DefaultBodyLimit::max(100 * 1024 * 1024)),
         )
+        .route(
+            "/containers/:id/deploy-github",
+            post(handlers::containers::deploy_github),
+        )
+        .route("/account/github/repos", get(handlers::account::github_repos))
         .route(
             "/keys",
             get(handlers::keys::list).post(handlers::keys::create),

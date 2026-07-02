@@ -10,6 +10,16 @@ export type User = {
   avatar_url?: string | null;
   status: UserStatus;
   permissions: string[];
+  discord_linked?: boolean;
+  github_linked?: boolean;
+  github_username?: string | null;
+};
+
+export type GithubRepo = {
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+  updated_at?: string | null;
 };
 
 export type Plan = {

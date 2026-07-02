@@ -46,7 +46,7 @@ pub async fn start(
         exp: Utc::now().timestamp() + 600,
     };
     let signed = oauth::sign_state(&state.cfg.auth_token_secret, &st);
-    let url = oauth::authorize_url(&state, provider, &signed)?;
+    let url = oauth::authorize_url(&state, provider, &signed, false)?;
     Ok(Redirect::to(&url))
 }
 
@@ -65,7 +65,8 @@ pub async fn link(
         exp: Utc::now().timestamp() + 600,
     };
     let signed = oauth::sign_state(&state.cfg.auth_token_secret, &st);
-    let url = oauth::authorize_url(&state, provider, &signed)?;
+    // Link requests the `repo` scope (GitHub) so we can deploy from repos.
+    let url = oauth::authorize_url(&state, provider, &signed, true)?;
     Ok(Json(serde_json::json!({ "authorize_url": url })))
 }
 
@@ -94,6 +95,17 @@ pub async fn unlink(
         .oauth_accounts()
         .delete_one(doc! { "user_id": auth.user_id, "provider": provider.as_str() })
         .await?;
+    // Drop the stored GitHub token so a stale credential isn't retained.
+    if provider.as_str() == "github" {
+        let _ = state
+            .db
+            .users()
+            .update_one(
+                doc! { "_id": auth.user_id },
+                doc! { "$unset": { "github_access_token": "", "github_username": "" } },
+            )
+            .await;
+    }
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -255,6 +267,8 @@ async fn resolve_user(
             if uid != Some(acc.user_id) {
                 return Err(AppError::Conflict("provider already linked to another account".into()));
             }
+            // Re-linking refreshes an expired / newly repo-scoped token.
+            store_github_token(state, acc.user_id, provider, info).await?;
             return Ok((acc.user_id, true));
         }
         return Ok((acc.user_id, false));
@@ -271,6 +285,7 @@ async fn resolve_user(
             return Err(AppError::Unauthorized);
         }
         create_link(state, uid, provider, info).await?;
+        store_github_token(state, uid, provider, info).await?;
         return Ok((uid, true));
     }
 
@@ -316,6 +331,8 @@ async fn resolve_user(
         banned_reason: None,
         failed_login_attempts: 0,
         locked_until: None,
+        github_access_token: None,
+        github_username: None,
     };
     let inserted = state.db.users().insert_one(&user).await?;
     let uid = inserted
@@ -324,6 +341,32 @@ async fn resolve_user(
         .ok_or_else(|| AppError::Internal("insert id".into()))?;
     create_link(state, uid, provider, info).await?;
     Ok((uid, false))
+}
+
+/// After a GitHub *link*, store the (sealed) access token + username so we can
+/// list repos and deploy. No-op for other providers / login flows.
+async fn store_github_token(
+    state: &AppState,
+    user_id: ObjectId,
+    provider: Provider,
+    info: &oauth::OAuthUserInfo,
+) -> AppResult<()> {
+    if provider.as_str() != "github" {
+        return Ok(());
+    }
+    let enc = crate::secretbox::seal(&state.cfg.auth_token_secret, info.access_token.as_bytes())?;
+    state
+        .db
+        .users()
+        .update_one(
+            doc! { "_id": user_id },
+            doc! { "$set": {
+                "github_access_token": enc,
+                "github_username": info.username.clone(),
+            }},
+        )
+        .await?;
+    Ok(())
 }
 
 async fn create_link(

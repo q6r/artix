@@ -59,6 +59,33 @@ function parseArtix(text) {
   return cfg;
 }
 
+// Validate a parsed .artix, returning a specific error string (surfaced to the
+// user) or null if OK.
+function validateArtix(a) {
+  const name = (a.NAME || "").trim();
+  if (!name || name.length > 128) return ".artix: NAME is required (max 128 chars)";
+  const type = (a.TYPE || "").toLowerCase();
+  if (type !== "discord_bot" && type !== "site") {
+    return `.artix: TYPE must be 'discord_bot' or 'site' (got '${a.TYPE || ""}')`;
+  }
+  const runtime = (a.RUNTIME || "node").toLowerCase();
+  if (!RUNTIMES[runtime]) {
+    return `.artix: unsupported RUNTIME '${runtime}' (allowed: ${Object.keys(RUNTIMES).join(", ")})`;
+  }
+  if (!(a.START || "").trim()) return ".artix: START command is required";
+  if (type === "site") {
+    const port = parseInt(a.PORT || "", 10);
+    if (!port || port < 1 || port > 65535) {
+      return ".artix: PORT is required for sites and must be 1–65535";
+    }
+  }
+  if (a.RAM !== undefined && String(a.RAM).trim() !== "") {
+    const ram = parseInt(a.RAM, 10);
+    if (!ram || ram <= 0) return ".artix: RAM must be a positive number (MB)";
+  }
+  return null;
+}
+
 function writeEnv(id, env) {
   // Defense-in-depth: only well-formed keys and single-line values (the backend
   // validates too, but never trust the caller for something that becomes a file).
@@ -136,11 +163,11 @@ app.post("/apps/:id/deploy", upload.single("bundle"), async (req, res) => {
     return res.status(400).json({ error: ".artix not found in project root" });
   }
   const a = parseArtix(artixText);
+  const vErr = validateArtix(a);
+  if (vErr) return res.status(400).json({ error: vErr });
   const type = (a.TYPE || "").toLowerCase();
   const runtime = (a.RUNTIME || "node").toLowerCase();
-  const image = RUNTIMES[runtime] ? RUNTIMES[runtime](a.VERSION) : null;
-  if (!image) return res.status(400).json({ error: "unsupported RUNTIME: " + runtime });
-  if (!a.START) return res.status(400).json({ error: "START missing in .artix" });
+  const image = RUNTIMES[runtime](a.VERSION);
   // RAM: the .artix value, but clamped to the authoritative cap the backend
   // passes (the plan limit) so a user can't over-request via .artix.
   const cap = Math.max(0, parseInt(req.body.ramCap || "0", 10) || 0);

@@ -16,14 +16,16 @@ import {
   MemoryStick,
   ExternalLink,
 } from "lucide-react";
+import GithubIcon from "@/components/icons/GithubIcon";
 import FadeIn from "@/components/FadeIn";
 import Skeleton from "@/components/Skeleton";
 import { useLang } from "@/components/LanguageProvider";
+import { useAuth } from "@/components/AuthProvider";
 import { useToast, useConfirm } from "@/components/FeedbackProvider";
 import ContainerStatusBadge from "@/components/containers/ContainerStatusBadge";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
-import type { Server, ContainerStats, DeployResult } from "@/lib/api/types";
+import type { Server, ContainerStats, DeployResult, GithubRepo } from "@/lib/api/types";
 
 type Tab = "overview" | "deploy" | "logs" | "env";
 
@@ -206,22 +208,24 @@ START=node index.js`;
 function DeployTab({ id }: { id: string }) {
   const { t } = useLang();
   const toast = useToast();
+  const { user } = useAuth();
+  const [source, setSource] = useState<"zip" | "github">("zip");
   const [busy, setBusy] = useState(false);
   const [buildLog, setBuildLog] = useState("");
 
-  const deploy = async (file: File) => {
+  const finish = (out: DeployResult) => {
+    setBuildLog(out.buildLog ?? "");
+    toast(t("cont.deploy.ok"), "success");
+    void mutate(`containers/${id}`);
+  };
+
+  const deployZip = async (file: File) => {
     setBusy(true);
     setBuildLog("");
     try {
       const fd = new FormData();
       fd.append("bundle", file);
-      const out = await api<DeployResult>(`containers/${id}/deploy`, {
-        method: "POST",
-        body: fd,
-      });
-      setBuildLog(out.buildLog ?? "");
-      toast(t("cont.deploy.ok"), "success");
-      await mutate(`containers/${id}`);
+      finish(await api<DeployResult>(`containers/${id}/deploy`, { method: "POST", body: fd }));
     } catch (e) {
       toast(e instanceof ApiError ? e.message : t("cont.deploy.err"));
     } finally {
@@ -229,32 +233,59 @@ function DeployTab({ id }: { id: string }) {
     }
   };
 
+  const seg = (active: boolean) =>
+    `inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors ${
+      active ? "bg-white text-black" : "text-white/60 hover:text-white"
+    }`;
+
   return (
     <FadeIn className="space-y-4">
-      <p className="text-sm text-white/55">{t("cont.deploy.hint")}</p>
-      <label
-        className={`inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85 ${
-          busy ? "pointer-events-none opacity-60" : "cursor-pointer"
-        }`}
-      >
-        {busy ? (
-          <>
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-            {t("cont.deploy.deploying")}
-          </>
-        ) : (
-          <>
-            <Upload className="h-4 w-4" /> {t("cont.deploy.btn")}
-          </>
-        )}
-        <input
-          type="file"
-          accept=".zip"
-          className="hidden"
-          disabled={busy}
-          onChange={(e) => e.target.files?.[0] && deploy(e.target.files[0])}
+      <div className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
+        <button type="button" onClick={() => setSource("zip")} className={seg(source === "zip")}>
+          <Upload className="h-4 w-4" /> {t("cont.deploy.srcZip")}
+        </button>
+        <button type="button" onClick={() => setSource("github")} className={seg(source === "github")}>
+          <GithubIcon className="h-4 w-4" /> {t("cont.deploy.srcGithub")}
+        </button>
+      </div>
+
+      {source === "zip" ? (
+        <>
+          <p className="text-sm text-white/55">{t("cont.deploy.hint")}</p>
+          <label
+            className={`inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85 ${
+              busy ? "pointer-events-none opacity-60" : "cursor-pointer"
+            }`}
+          >
+            {busy ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                {t("cont.deploy.deploying")}
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4" /> {t("cont.deploy.btn")}
+              </>
+            )}
+            <input
+              type="file"
+              accept=".zip"
+              className="hidden"
+              disabled={busy}
+              onChange={(e) => e.target.files?.[0] && deployZip(e.target.files[0])}
+            />
+          </label>
+        </>
+      ) : (
+        <GithubDeploy
+          id={id}
+          linked={!!user?.github_linked}
+          busy={busy}
+          setBusy={setBusy}
+          onDone={finish}
+          onErr={(m) => toast(m)}
         />
-      </label>
+      )}
 
       <details className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
         <summary className="cursor-pointer text-sm text-white/60">{t("cont.deploy.artixHelp")} .artix</summary>
@@ -274,6 +305,117 @@ function DeployTab({ id }: { id: string }) {
         </div>
       )}
     </FadeIn>
+  );
+}
+
+function GithubDeploy({
+  id,
+  linked,
+  busy,
+  setBusy,
+  onDone,
+  onErr,
+}: {
+  id: string;
+  linked: boolean;
+  busy: boolean;
+  setBusy: (b: boolean) => void;
+  onDone: (out: DeployResult) => void;
+  onErr: (m: string) => void;
+}) {
+  const { t } = useLang();
+  const [repo, setRepo] = useState("");
+  const [branch, setBranch] = useState("");
+  const { data: repos, loading } = useQuery<GithubRepo[]>(
+    linked ? "account/github/repos" : null,
+  );
+
+  const connect = async () => {
+    try {
+      const { authorize_url } = await api<{ authorize_url: string }>("oauth/github/link", {
+        method: "POST",
+      });
+      window.location.href = authorize_url;
+    } catch (e) {
+      onErr(e instanceof ApiError ? e.message : t("cont.deploy.err"));
+    }
+  };
+
+  const deploy = async () => {
+    if (!repo) return;
+    setBusy(true);
+    try {
+      onDone(
+        await api<DeployResult>(`containers/${id}/deploy-github`, {
+          method: "POST",
+          json: { repo, ref: branch.trim() || undefined },
+        }),
+      );
+    } catch (e) {
+      onErr(e instanceof ApiError ? e.message : t("cont.deploy.err"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!linked) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <p className="text-sm text-white/60">{t("cont.deploy.githubNotLinked")}</p>
+        <button
+          onClick={connect}
+          className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85"
+        >
+          <GithubIcon className="h-4 w-4" /> {t("cont.deploy.connectGithub")}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <label className="flex flex-col gap-2">
+        <span className="text-sm font-medium text-white/70">{t("cont.deploy.repo")}</span>
+        <select
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-white/30 [color-scheme:dark]"
+        >
+          <option value="">{loading ? t("cont.deploy.loadingRepos") : t("cont.deploy.pickRepo")}</option>
+          {(repos ?? []).map((r) => (
+            <option key={r.full_name} value={r.full_name}>
+              {r.full_name}
+              {r.private ? " 🔒" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-2">
+        <span className="text-sm font-medium text-white/70">{t("cont.deploy.branch")}</span>
+        <input
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          placeholder={t("cont.deploy.branchPlaceholder")}
+          className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none focus:border-white/30"
+        />
+      </label>
+      <button
+        onClick={deploy}
+        disabled={busy || !repo}
+        className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
+      >
+        {busy ? (
+          <>
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+            {t("cont.deploy.deploying")}
+          </>
+        ) : (
+          <>
+            <GithubIcon className="h-4 w-4" /> {t("cont.deploy.deployFromGithub")}
+          </>
+        )}
+      </button>
+    </div>
   );
 }
 

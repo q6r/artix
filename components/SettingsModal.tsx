@@ -26,6 +26,7 @@ import {
   CreditCard,
   HelpCircle,
   KeyRound,
+  Link2,
   LogOut,
   Palette,
   Plus,
@@ -33,14 +34,17 @@ import {
   Trash2,
   User,
   Users,
+  MessageCircle,
   X,
 } from "lucide-react";
+import GithubIcon from "@/components/icons/GithubIcon";
 
 type SectionId =
   | "perfil"
   | "aparencia"
   | "seguranca"
   | "notificacoes"
+  | "conexoes"
   | "geral"
   | "plano"
   | "membros"
@@ -48,7 +52,11 @@ type SectionId =
 
 const groups: {
   titleKey: string;
-  items: { id: SectionId; labelKey: string; icon: typeof User }[];
+  items: {
+    id: SectionId;
+    labelKey: string;
+    icon: React.ComponentType<{ className?: string; strokeWidth?: number; size?: number }>;
+  }[];
 }[] = [
     {
       titleKey: "dash.settings.group.account",
@@ -57,6 +65,7 @@ const groups: {
         { id: "aparencia", labelKey: "dash.settings.nav.appearance", icon: Palette },
         { id: "seguranca", labelKey: "dash.settings.nav.security", icon: Shield },
         { id: "notificacoes", labelKey: "dash.settings.nav.notifications", icon: Bell },
+        { id: "conexoes", labelKey: "dash.settings.nav.connections", icon: Link2 },
       ],
     },
     {
@@ -407,6 +416,99 @@ function NotificationsSection() {
         <Row title={t("dash.settings.notifications.product")} desc={t("dash.settings.notifications.productDesc")}>
           <Toggle />
         </Row>
+      </div>
+    </SectionShell>
+  );
+}
+
+function ConnectionsSection() {
+  const { t } = useLang();
+  const { user, refresh } = useAuth();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const link = async (provider: "discord" | "github") => {
+    setBusy(provider);
+    setError(null);
+    try {
+      const { authorize_url } = await api<{ authorize_url: string }>(`oauth/${provider}/link`, {
+        method: "POST",
+      });
+      window.location.href = authorize_url;
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : t("dash.settings.connections.err"));
+      setBusy(null);
+    }
+  };
+  const unlink = async (provider: "discord" | "github") => {
+    setBusy(provider);
+    setError(null);
+    try {
+      await api(`oauth/${provider}/unlink`, { method: "DELETE" });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : t("dash.settings.connections.err"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const providers = [
+    {
+      id: "discord" as const,
+      label: "Discord",
+      icon: MessageCircle,
+      linked: !!user?.discord_linked,
+      sub: undefined as string | undefined,
+    },
+    {
+      id: "github" as const,
+      label: "GitHub",
+      icon: GithubIcon,
+      linked: !!user?.github_linked,
+      sub: user?.github_username || undefined,
+    },
+  ];
+
+  return (
+    <SectionShell
+      title={t("dash.settings.connections.title")}
+      desc={t("dash.settings.connections.desc")}
+    >
+      <div className="flex flex-col gap-3">
+        {providers.map((p) => (
+          <Row
+            key={p.id}
+            title={p.label}
+            desc={
+              p.linked
+                ? p.sub
+                  ? `${t("dash.settings.connections.linked")} · ${p.sub}`
+                  : t("dash.settings.connections.linked")
+                : t("dash.settings.connections.notLinked")
+            }
+          >
+            {p.linked ? (
+              <button
+                onClick={() => unlink(p.id)}
+                disabled={busy === p.id}
+                className="inline-flex h-9 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5 disabled:opacity-50"
+              >
+                {t("dash.settings.connections.disconnect")}
+              </button>
+            ) : (
+              <button
+                onClick={() => link(p.id)}
+                disabled={busy === p.id}
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
+              >
+                <p.icon className="h-4 w-4" /> {t("dash.settings.connections.connect")}
+              </button>
+            )}
+          </Row>
+        ))}
+        {error && <p className="text-sm text-red-300">{error}</p>}
+        <p className="text-xs text-white/40">{t("dash.settings.connections.githubNote")}</p>
       </div>
     </SectionShell>
   );
@@ -818,6 +920,8 @@ function renderSection(id: SectionId, orgProps: OrgSectionProps): React.ReactNod
       return <SecuritySection />;
     case "notificacoes":
       return <NotificationsSection />;
+    case "conexoes":
+      return <ConnectionsSection />;
     case "geral":
       return <GeneralSection {...orgProps} />;
     case "plano":

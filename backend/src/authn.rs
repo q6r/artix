@@ -54,6 +54,11 @@ impl AuthUser {
             display_name: self.user.display_name.clone(),
             status: self.user.status,
             permissions: self.permissions.clone(),
+            // Best-effort from the loaded user; /auth/me (public_user) is the
+            // authoritative source that also queries linked oauth accounts.
+            discord_linked: false,
+            github_linked: self.user.github_access_token.is_some(),
+            github_username: self.user.github_username.clone(),
         }
     }
 }

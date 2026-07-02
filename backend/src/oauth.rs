@@ -50,9 +50,12 @@ impl Provider {
             Provider::Github => "https://github.com/login/oauth/access_token",
         }
     }
-    fn scope(self) -> &'static str {
+    fn scope(self, want_repo: bool) -> &'static str {
         match self {
             Provider::Discord => "identify email",
+            // Only the *link* flow requests `repo` (to deploy from repos); login
+            // stays minimal.
+            Provider::Github if want_repo => "read:user user:email repo",
             Provider::Github => "read:user user:email",
         }
     }
@@ -110,7 +113,12 @@ pub fn redirect_uri(state: &AppState, provider: Provider) -> String {
 }
 
 /// Build the provider authorize URL the browser is redirected to.
-pub fn authorize_url(state: &AppState, provider: Provider, signed_state: &str) -> AppResult<String> {
+pub fn authorize_url(
+    state: &AppState,
+    provider: Provider,
+    signed_state: &str,
+    want_repo: bool,
+) -> AppResult<String> {
     let (client_id, _) = provider.credentials(&state.cfg);
     if client_id.is_empty() {
         return Err(AppError::Validation("provider not configured".into()));
@@ -122,7 +130,7 @@ pub fn authorize_url(state: &AppState, provider: Provider, signed_state: &str) -
             ("client_id", client_id.as_str()),
             ("redirect_uri", redirect.as_str()),
             ("response_type", "code"),
-            ("scope", provider.scope()),
+            ("scope", provider.scope(want_repo)),
             ("state", signed_state),
         ],
     )
@@ -137,6 +145,10 @@ pub struct OAuthUserInfo {
     pub email_verified: bool,
     pub display_name: String,
     pub avatar_url: Option<String>,
+    /// The provider access token (kept only for GitHub, to access repos).
+    pub access_token: String,
+    /// Provider handle (GitHub `login`); used for the linked-account label.
+    pub username: Option<String>,
 }
 
 /// Exchange the authorization `code` for a provider access token.
@@ -214,7 +226,15 @@ async fn fetch_user(
                 let ext = if hash.starts_with("a_") { "gif" } else { "png" };
                 format!("https://cdn.discordapp.com/avatars/{id}/{hash}.{ext}?size=128")
             });
-            Ok(OAuthUserInfo { provider_user_id: id, email, email_verified, display_name, avatar_url })
+            Ok(OAuthUserInfo {
+                provider_user_id: id,
+                email,
+                email_verified,
+                display_name,
+                avatar_url,
+                access_token: access_token.to_string(),
+                username: None,
+            })
         }
         Provider::Github => {
             let v: serde_json::Value = state
@@ -249,8 +269,17 @@ async fn fetch_user(
 
             // GitHub may hide the email on /user; the verified primary lives here.
             let (email, email_verified) = github_primary_email(state, access_token).await;
+            let username = v.get("login").and_then(|x| x.as_str()).map(|s| s.to_string());
 
-            Ok(OAuthUserInfo { provider_user_id: id, email, email_verified, display_name, avatar_url })
+            Ok(OAuthUserInfo {
+                provider_user_id: id,
+                email,
+                email_verified,
+                display_name,
+                avatar_url,
+                access_token: access_token.to_string(),
+                username,
+            })
         }
     }
 }

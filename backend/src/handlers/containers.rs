@@ -338,6 +338,134 @@ pub async fn deploy(
     Ok(Json(dep))
 }
 
+// ----------------------------- deploy from GitHub -----------------------------
+
+#[derive(Deserialize)]
+pub struct DeployGithubReq {
+    pub repo: String,
+    #[serde(default, rename = "ref")]
+    pub git_ref: Option<String>,
+}
+
+fn valid_repo(repo: &str) -> bool {
+    let parts: Vec<&str> = repo.split('/').collect();
+    parts.len() == 2
+        && parts.iter().all(|p| {
+            !p.is_empty()
+                && p.len() <= 100
+                && p.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        })
+}
+
+async fn persist_deploy(state: &AppState, server_id: ObjectId, dep: &crate::agent::DeployResult) {
+    let now = Utc::now();
+    let mut set = doc! {
+        "container.runtime": dep.runtime.clone(),
+        "container.image": dep.image.clone(),
+        "container.build_log": dep.build_log.clone(),
+        "container.port": dep.port,
+        "container.ram_mb": dep.ram,
+        "container.status": "running",
+        "container.deployed": true,
+        "state": "running",
+        "updated_at": bson::DateTime::from_chrono(now),
+    };
+    if let Some(s) = &dep.subdomain {
+        set.insert("container.subdomain", s);
+    }
+    let _ = state
+        .db
+        .servers()
+        .update_one(doc! { "_id": server_id }, doc! { "$set": set })
+        .await;
+}
+
+/// POST /containers/:id/deploy-github — pull a repo zipball (with the caller's
+/// GitHub token) and deploy it through the SAME agent path as a zip upload.
+pub async fn deploy_github(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<DeployGithubReq>,
+) -> AppResult<Json<crate::agent::DeployResult>> {
+    let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
+    let (app_id, env_json, ram_cap, subdomain) = {
+        let c = require_container(&server)?;
+        (
+            c.app_id.clone(),
+            env_to_json(&c.env),
+            c.ram_mb.unwrap_or(256),
+            c.subdomain.clone(),
+        )
+    };
+    let repo = req.repo.trim();
+    if !valid_repo(repo) {
+        return Err(AppError::Validation("invalid repo (expected owner/name)".into()));
+    }
+    let token = crate::handlers::account::github_token(&state, &auth)?;
+
+    // Resolve the ref (validated), defaulting to the repo's default branch.
+    let git_ref = match req.git_ref.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(r) => {
+            if r.len() > 100
+                || !r
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+            {
+                return Err(AppError::Validation("invalid ref".into()));
+            }
+            r.to_string()
+        }
+        None => {
+            let meta: serde_json::Value = state
+                .http
+                .get(format!("https://api.github.com/repos/{repo}"))
+                .bearer_auth(&token)
+                .header(reqwest::header::USER_AGENT, "ArtixCloud")
+                .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+                .send()
+                .await
+                .map_err(|_| AppError::Unavailable("github unreachable".into()))?
+                .json()
+                .await
+                .map_err(|_| AppError::Validation("repo not found".into()))?;
+            meta.get("default_branch")
+                .and_then(|x| x.as_str())
+                .unwrap_or("main")
+                .to_string()
+        }
+    };
+
+    // Download the zipball server-side with the user's token.
+    let res = state
+        .http
+        .get(format!("https://api.github.com/repos/{repo}/zipball/{git_ref}"))
+        .bearer_auth(&token)
+        .header(reqwest::header::USER_AGENT, "ArtixCloud")
+        .send()
+        .await
+        .map_err(|_| AppError::Unavailable("github zipball".into()))?;
+    if !res.status().is_success() {
+        return Err(AppError::Validation(
+            "could not download the repo (check the repo/branch and access)".into(),
+        ));
+    }
+    let zip = res
+        .bytes()
+        .await
+        .map_err(|_| AppError::Internal("zipball read".into()))?;
+    if zip.len() > 100 * 1024 * 1024 {
+        return Err(AppError::Validation("repo too large (max 100MB)".into()));
+    }
+
+    let dep = agent(&state)?
+        .deploy(&app_id, zip.to_vec(), env_json, 0.5, ram_cap, subdomain.as_deref())
+        .await?;
+    persist_deploy(&state, server.id.unwrap(), &dep).await;
+    Ok(Json(dep))
+}
+
 // ----------------------------- status / stats / logs -----------------------------
 
 pub async fn status(

@@ -202,6 +202,19 @@ fn sign_access(state: &AppState, user_id: &ObjectId, sid: &ObjectId, ver: u32) -
 pub(crate) async fn public_user(state: &AppState, user: &User) -> AppResult<UserPublic> {
     let permissions = resolve_permissions(state, user).await?;
     let id = user.id.unwrap_or_default().to_hex();
+    // Which social providers are linked (for the settings "Connections" UI).
+    let mut discord_linked = false;
+    let mut github_linked = user.github_access_token.is_some();
+    if let Some(uid) = user.id {
+        let mut cur = state.db.oauth_accounts().find(doc! { "user_id": uid }).await?;
+        while cur.advance().await? {
+            match cur.deserialize_current()?.provider.as_str() {
+                "discord" => discord_linked = true,
+                "github" => github_linked = true,
+                _ => {}
+            }
+        }
+    }
     Ok(UserPublic {
         // Expose our cached proxy path, never the provider's (expiring) CDN URL.
         avatar_url: user.avatar_url.as_ref().map(|_| format!("/api/avatar/{id}")),
@@ -211,6 +224,9 @@ pub(crate) async fn public_user(state: &AppState, user: &User) -> AppResult<User
         display_name: user.display_name.clone(),
         status: user.status,
         permissions,
+        discord_linked,
+        github_linked,
+        github_username: user.github_username.clone(),
     })
 }
 
@@ -256,6 +272,8 @@ pub async fn register(
         banned_reason: None,
         failed_login_attempts: 0,
         locked_until: None,
+        github_access_token: None,
+        github_username: None,
     };
     let inserted = state.db.users().insert_one(&user).await?;
     let user_id = inserted
@@ -432,6 +450,8 @@ pub async fn request_code(
                 banned_reason: None,
                 failed_login_attempts: 0,
                 locked_until: None,
+                github_access_token: None,
+                github_username: None,
             };
             let inserted = state.db.users().insert_one(&user).await?;
             user.id = inserted.inserted_id.as_object_id();

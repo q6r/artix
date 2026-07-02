@@ -40,6 +40,12 @@ pub struct User {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub locked_until: Option<DateTime<Utc>>,
+    /// GitHub OAuth token (sealed via `secretbox`) for repo access. Never
+    /// serialized to clients (skipped when absent; not in `UserPublic`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_access_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_username: Option<String>,
 }
 
 /// collection: `roles`
@@ -1012,6 +1018,13 @@ pub struct UserPublic {
     pub avatar_url: Option<String>,
     pub status: UserStatus,
     pub permissions: Vec<String>,
+    /// Linked social accounts (for the settings "Connections" UI).
+    #[serde(default)]
+    pub discord_linked: bool,
+    #[serde(default)]
+    pub github_linked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_username: Option<String>,
 }
 
 /// collection: `relay_settings` — admin override of a config relay's state.
