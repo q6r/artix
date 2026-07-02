@@ -207,11 +207,23 @@ impl AgentClient {
     }
 
     async fn json<T: serde::de::DeserializeOwned>(&self, res: reqwest::Response) -> AppResult<T> {
-        if !res.status().is_success() {
-            let s = res.status();
+        let status = res.status();
+        if !status.is_success() {
             let b = res.text().await.unwrap_or_default();
-            tracing::error!(status = %s, body = %b, "container agent error");
-            return Err(AppError::Unavailable("container agent error".into()));
+            tracing::error!(status = %status, body = %b, "container agent error");
+            // Surface the agent's specific message (e.g. .artix validation, build
+            // failure) to the user on 4xx; keep 5xx generic.
+            let msg = serde_json::from_str::<serde_json::Value>(&b)
+                .ok()
+                .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_string));
+            if status.is_client_error() {
+                return Err(AppError::Validation(
+                    msg.unwrap_or_else(|| "deploy rejected".into()),
+                ));
+            }
+            return Err(AppError::Unavailable(
+                msg.unwrap_or_else(|| "container agent error".into()),
+            ));
         }
         res.json::<T>()
             .await
