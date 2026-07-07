@@ -17,6 +17,7 @@ use crate::{
     authn::AuthUser,
     billing,
     db::Collections,
+    email,
     error::{AppError, AppResult},
     models::{Server, ServerPublic, ServerState, UserRef},
     permissions::perm,
@@ -468,4 +469,158 @@ pub async fn delete_server(
     )
     .await;
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+// ----------------------------- Suspend / reactivate -----------------------------
+
+/// Which default template + accent a notification uses.
+#[derive(Clone, Copy)]
+enum NoticeKind {
+    Suspended,
+    Reactivated,
+}
+
+/// Body of a suspend/reactivate call: whether to email the owner, and if so
+/// whether to send the default template or an admin-authored (custom) message.
+/// A custom message overrides subject/title and renders `message` as Markdown.
+#[derive(Deserialize)]
+pub struct NotifyReq {
+    #[serde(default)]
+    pub notify: bool,
+    #[serde(default)]
+    pub custom: bool,
+    #[serde(default)]
+    pub subject: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Markdown body (`**bold**`, `# heading`, `[text](url)`, …).
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// Email the server's owner about a suspend/reactivate, honoring `req.notify`
+/// and `req.custom`. Returns whether an email was actually dispatched.
+async fn notify_owner(
+    state: &AppState,
+    server: &Server,
+    req: &NotifyReq,
+    kind: NoticeKind,
+) -> bool {
+    if !req.notify {
+        return false;
+    }
+    let Ok(Some(user)) = state.db.users().find_one(doc! { "_id": server.user_id }).await else {
+        return false;
+    };
+    if req.custom {
+        let subject = req
+            .subject
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Aviso — ArtixCloud");
+        let title = req
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Aviso da ArtixCloud");
+        let message = req.message.as_deref().unwrap_or("");
+        let accent = match kind {
+            NoticeKind::Suspended => email::WARN,
+            NoticeKind::Reactivated => email::GOOD,
+        };
+        email::send_admin_notice(state, &user.email, subject, title, message, accent).await;
+    } else {
+        match kind {
+            NoticeKind::Suspended => email::send_server_suspended(state, &user, &server.name).await,
+            NoticeKind::Reactivated => {
+                email::send_server_reactivated(state, &user, &server.name).await
+            }
+        }
+    }
+    true
+}
+
+/// Suspend a VPS regardless of owner (admin override): power the VM off and mark
+/// it `suspended` (the power handler then refuses to boot it back up until it's
+/// reactivated). Optionally emails the owner — default or custom message.
+pub async fn suspend_server(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<NotifyReq>,
+) -> AppResult<Json<serde_json::Value>> {
+    auth.require(perm::NODES_MANAGE)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
+    let server = state
+        .db
+        .servers()
+        .find_one(doc! { "_id": oid })
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let _ = crate::handlers::servers::set_power(&state, &server, PowerAction::Stop).await;
+    state
+        .db
+        .servers()
+        .update_one(
+            doc! { "_id": oid },
+            doc! { "$set": { "state": "suspended", "updated_at": bson::DateTime::from_chrono(Utc::now()) }},
+        )
+        .await?;
+
+    let emailed = notify_owner(&state, &server, &req, NoticeKind::Suspended).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::NODES_MANAGE,
+        Some(oid),
+        &headers,
+        doc! { "action": "server.suspend", "emailed": emailed },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true, "emailed": emailed })))
+}
+
+/// Reactivate a suspended VPS: power it back on and mark it `running`.
+/// Optionally emails the owner — default or custom message.
+pub async fn unsuspend_server(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<NotifyReq>,
+) -> AppResult<Json<serde_json::Value>> {
+    auth.require(perm::NODES_MANAGE)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
+    let server = state
+        .db
+        .servers()
+        .find_one(doc! { "_id": oid })
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let _ = crate::handlers::servers::set_power(&state, &server, PowerAction::Start).await;
+    state
+        .db
+        .servers()
+        .update_one(
+            doc! { "_id": oid },
+            doc! { "$set": { "state": "running", "updated_at": bson::DateTime::from_chrono(Utc::now()) }},
+        )
+        .await?;
+
+    let emailed = notify_owner(&state, &server, &req, NoticeKind::Reactivated).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::NODES_MANAGE,
+        Some(oid),
+        &headers,
+        doc! { "action": "server.unsuspend", "emailed": emailed },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true, "emailed": emailed })))
 }

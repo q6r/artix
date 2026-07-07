@@ -22,6 +22,7 @@ export default function OrgDetailClient({ id }: { id: string }) {
   const orgKey = `orgs/${id}`;
   const { data: org, error, loading } = useQuery<OrgDetail>(orgKey);
   const { data: myServersData } = useQuery<Server[]>("servers");
+  const { data: myContainersData } = useQuery<Server[]>("containers");
   const [tab, setTab] = useState<Tab>("servers");
   const [err, setErr] = useState<string | null>(null);
 
@@ -29,6 +30,7 @@ export default function OrgDetailClient({ id }: { id: string }) {
   if (error || !org) return <p className="text-sm text-red-300">{t("org.error")}</p>;
 
   const myServers = myServersData ?? [];
+  const myContainers = myContainersData ?? [];
   const isManager = org.role === "owner" || org.role === "admin";
   const isOwner = org.role === "owner";
 
@@ -38,6 +40,7 @@ export default function OrgDetailClient({ id }: { id: string }) {
       await fn();
       await mutate(orgKey);
       void mutate("servers");
+      void mutate("containers");
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : t("org.error"));
     }
@@ -55,7 +58,7 @@ export default function OrgDetailClient({ id }: { id: string }) {
     }
   };
 
-  const candidates = myServers.filter((s) => !s.org_id);
+  const candidates = [...myServers, ...myContainers].filter((s) => !s.org_id);
   const tabs: Tab[] = ["servers", "members", "permissions"];
 
   return (
@@ -198,7 +201,9 @@ function ServersTab({
                   className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.05]"
                 >
                   <span className="font-medium">{s.name}</span>
-                  <span className="text-xs uppercase text-white/45">{s.plan}</span>
+                  <span className="text-xs uppercase text-white/45">
+                    {s.type === 1 ? (s.container?.container_type ?? "container") : s.plan}
+                  </span>
                 </button>
               ))}
             </div>
@@ -210,25 +215,35 @@ function ServersTab({
         <p className="text-sm text-white/45">{t("org.noServers")}</p>
       ) : (
         <div className="divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10">
-          {org.servers.map((s) => (
-            <div key={s.id} className="flex items-center gap-4 bg-white/[0.02] p-4">
-              <Link href={`/dashboard/servers/${s.id}`} className="min-w-0 flex-1">
-                <p className="truncate font-medium hover:underline">{s.name}</p>
-                <p className="truncate text-xs text-white/45">
-                  {s.os} · {s.specs.vcpu} vCPU · {s.specs.ram_gb} GB
-                </p>
-              </Link>
-              {isManager && (
-                <button
-                  onClick={() => call(() => api(`orgs/${id}/servers/${s.id}`, { method: "DELETE" }))}
-                  className="text-white/40 transition-colors hover:text-red-300"
-                  aria-label={t("org.removeServer")}
+          {org.servers.map((s) => {
+            const isC = s.type === 1;
+            return (
+              <div key={s.id} className="flex items-center gap-4 bg-white/[0.02] p-4">
+                <Link
+                  href={isC ? `/dashboard/containers/${s.id}` : `/dashboard/servers/${s.id}`}
+                  className="min-w-0 flex-1"
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          ))}
+                  <p className="truncate font-medium hover:underline">{s.name}</p>
+                  <p className="truncate text-xs text-white/45">
+                    {isC
+                      ? `${s.container?.container_type ?? "container"}${
+                          s.container?.ram_mb ? ` · ${s.container.ram_mb} MB` : ""
+                        }`
+                      : `${s.os} · ${s.specs.vcpu} vCPU · ${s.specs.ram_gb} GB`}
+                  </p>
+                </Link>
+                {isManager && (
+                  <button
+                    onClick={() => call(() => api(`orgs/${id}/servers/${s.id}`, { method: "DELETE" }))}
+                    className="text-white/40 transition-colors hover:text-red-300"
+                    aria-label={t("org.removeServer")}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </FadeIn>

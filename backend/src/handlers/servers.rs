@@ -17,7 +17,7 @@ use crate::{
     db::Collections,
     error::{AppError, AppResult},
     models::{OrgRole, Server, ServerPublic, ServerState},
-    permissions::{perm, server_perm},
+    permissions::{cap, perm, server_perm},
     proxmox::{ConsoleTicket, MetricPoint, PowerAction},
     state::AppState,
 };
@@ -147,6 +147,7 @@ pub async fn create(
     auth: AuthUser,
     Json(req): Json<CreateServerReq>,
 ) -> AppResult<Json<ServerPublic>> {
+    auth.scope(cap::SERVICES_CREATE)?;
     // Direct (unbilled) provisioning is an admin-only path; regular users get a
     // VPS only through the paid billing flow (which provisions after payment).
     auth.require(perm::NODES_MANAGE)?;
@@ -229,6 +230,7 @@ pub async fn list(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> AppResult<Json<Vec<ServerPublic>>> {
+    auth.scope(cap::SERVICES_READ)?;
     // The caller sees: their own servers, every server in orgs they own/admin,
     // and servers individually granted to them.
     let mut org_ids: Vec<ObjectId> = Vec::new();
@@ -341,6 +343,7 @@ pub async fn get(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<ServerPublic>> {
+    auth.scope(cap::SERVICES_READ)?;
     let mut server = access(&state, auth.user_id, &id, server_perm::VIEW).await?;
 
     // Best-effort live status refresh from Proxmox — but never clobber a
@@ -423,6 +426,7 @@ pub async fn reinstall(
     Path(id): Path<String>,
     Json(req): Json<ReinstallReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    auth.scope(cap::SERVICES_DELETE)?;
     let mut server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let px = state
         .proxmox
@@ -470,6 +474,7 @@ pub async fn reset_root_password(
     Path(id): Path<String>,
     Json(req): Json<RootPasswordReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    auth.scope(cap::SERVICES_CREATE)?;
     let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let px = state
         .proxmox
@@ -502,6 +507,7 @@ pub async fn power(
     Path(id): Path<String>,
     Json(req): Json<PowerReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    auth.scope(cap::SERVICES_RESTART)?;
     let server = access(&state, auth.user_id, &id, server_perm::POWER).await?;
     let px = state
         .proxmox
@@ -529,6 +535,7 @@ pub async fn delete(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    auth.scope(cap::SERVICES_DELETE)?;
     let server = access(&state, auth.user_id, &id, server_perm::DELETE).await?;
 
     // A never-provisioned (pending payment) server has no VM — just drop it.
@@ -568,6 +575,7 @@ pub async fn metrics(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<Vec<MetricPoint>>> {
+    auth.scope(cap::METRICS_READ)?;
     let server = access(&state, auth.user_id, &id, server_perm::METRICS).await?;
     let px = state
         .proxmox
@@ -581,6 +589,7 @@ pub async fn console(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<ConsoleTicket>> {
+    auth.scope(cap::CONSOLE)?;
     let server = access(&state, auth.user_id, &id, server_perm::CONSOLE).await?;
     let px = state
         .proxmox

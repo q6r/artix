@@ -139,16 +139,25 @@ export async function proxyToBackend(request: Request, path: string): Promise<Re
   // multipart parser needs. Round-trips JSON byte-for-byte too.
   const body = hasBody ? Buffer.from(await request.arrayBuffer()) : undefined;
 
+  // External API-key auth: forward a `Bearer ak_…` header verbatim (the backend
+  // validates it). Only the `ak_` form is forwarded — session tokens come from
+  // our own httpOnly cookie, never from the client.
+  const clientAuth = request.headers.get("authorization");
+  const apiKey =
+    clientAuth && clientAuth.startsWith("Bearer ak_") ? clientAuth : undefined;
+
   const call = (accessToken?: string) => {
     const headers = forwardHeaders(request);
     if (accessToken) headers["authorization"] = `Bearer ${accessToken}`;
+    else if (apiKey) headers["authorization"] = apiKey;
     return backendFetch(`${path}${search}`, { method, headers, body });
   };
 
   let access = jar.get(AT_COOKIE)?.value;
   let res = await call(access);
 
-  if (res.status === 401) {
+  // Cookie sessions can be refreshed; API keys cannot (and don't need to).
+  if (res.status === 401 && !apiKey) {
     const refreshed = await tryRefresh();
     if (refreshed) {
       access = refreshed;
@@ -156,12 +165,15 @@ export async function proxyToBackend(request: Request, path: string): Promise<Re
     }
   }
 
-  // Stream the backend body straight through, preserving status + content-type.
-  const text = await res.text();
-  return new Response(text, {
-    status: res.status,
-    headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-  });
+  // Stream the backend body straight through (binary-safe: text() would corrupt
+  // a download). Preserve status + content-type/disposition/length.
+  const headers = new Headers();
+  headers.set("content-type", res.headers.get("content-type") ?? "application/json");
+  const cd = res.headers.get("content-disposition");
+  if (cd) headers.set("content-disposition", cd);
+  const cl = res.headers.get("content-length");
+  if (cl) headers.set("content-length", cl);
+  return new Response(res.body, { status: res.status, headers });
 }
 
 /**

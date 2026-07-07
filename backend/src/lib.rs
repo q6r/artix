@@ -2,6 +2,7 @@ pub mod agent;
 pub mod auth;
 pub mod authn;
 pub mod billing;
+pub mod cloudflare;
 pub mod config;
 pub mod crypto;
 pub mod db;
@@ -173,6 +174,14 @@ pub fn build_router(state: AppState) -> Router {
             patch(handlers::admin_servers::update_server)
                 .delete(handlers::admin_servers::delete_server),
         )
+        .route(
+            "/servers/:id/suspend",
+            post(handlers::admin_servers::suspend_server),
+        )
+        .route(
+            "/servers/:id/unsuspend",
+            post(handlers::admin_servers::unsuspend_server),
+        )
         .route("/tickets", get(handlers::tickets::admin_list))
         .route("/tickets/:id", get(handlers::tickets::admin_get))
         .route("/tickets/:id/messages", post(handlers::tickets::admin_reply))
@@ -295,6 +304,109 @@ pub fn build_router(state: AppState) -> Router {
             "/containers/:id/deploy-github",
             post(handlers::containers::deploy_github),
         )
+        .route(
+            "/containers/:id/deploys",
+            get(handlers::containers::deploys),
+        )
+        .route(
+            "/containers/:id/domain",
+            get(handlers::containers::get_domain)
+                .put(handlers::containers::set_domain)
+                .delete(handlers::containers::remove_domain),
+        )
+        .route("/containers/purchase", post(handlers::containers::purchase))
+        .route("/containers/ram", get(handlers::containers::ram_balance))
+        .route("/containers/claim-free", post(handlers::containers::claim_free))
+        .route("/containers/:id/files", get(handlers::containers::list_files))
+        .route(
+            "/containers/:id/file",
+            get(handlers::containers::read_file).put(handlers::containers::write_file),
+        )
+        .route(
+            "/containers/:id/console",
+            post(handlers::containers::console),
+        )
+        .route(
+            "/containers/:id/players",
+            get(handlers::containers::mc_players),
+        )
+        .route(
+            "/containers/:id/plugin",
+            post(handlers::containers::upload_plugin)
+                .layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
+        )
+        .route(
+            "/containers/:id/plugin/delete",
+            post(handlers::containers::delete_plugin),
+        )
+        .route(
+            "/containers/:id/max-players",
+            put(handlers::containers::set_max_players),
+        )
+        .route(
+            "/containers/:id/backup",
+            post(handlers::containers::create_backup),
+        )
+        .route(
+            "/containers/:id/backups",
+            get(handlers::containers::list_backups),
+        )
+        .route(
+            "/containers/:id/backup/restore",
+            post(handlers::containers::restore_backup),
+        )
+        .route(
+            "/containers/:id/backup/delete",
+            post(handlers::containers::delete_backup),
+        )
+        .route(
+            "/containers/:id/backup/download",
+            get(handlers::containers::download_backup),
+        )
+        .route(
+            "/containers/:id/world",
+            post(handlers::containers::upload_world)
+                .layer(DefaultBodyLimit::max(300 * 1024 * 1024)),
+        )
+        .route(
+            "/containers/:id/icon",
+            get(handlers::containers::get_icon)
+                .post(handlers::containers::upload_icon)
+                .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
+        .route(
+            "/containers/:id/name",
+            put(handlers::containers::rename_container),
+        )
+        .route(
+            "/containers/:id/settings",
+            put(handlers::containers::set_mc_settings),
+        )
+        .route(
+            "/containers/:id/reprovision",
+            post(handlers::containers::reprovision_mc),
+        )
+        .route(
+            "/containers/:id/ram",
+            put(handlers::containers::set_mc_ram),
+        )
+        .route(
+            "/containers/:id/voice",
+            put(handlers::containers::set_voice),
+        )
+        .route(
+            "/community/voice-token",
+            post(handlers::containers::community_voice_token),
+        )
+        .route(
+            "/community/voice-state",
+            get(handlers::containers::community_voice_state),
+        )
+        .route(
+            "/community/chat",
+            get(handlers::containers::get_community_chat)
+                .post(handlers::containers::post_community_chat),
+        )
         .route("/account/github/repos", get(handlers::account::github_repos))
         .route(
             "/keys",
@@ -375,9 +487,21 @@ pub fn build_router(state: AppState) -> Router {
         // Inbound provider webhook (HMAC-verified, no session auth).
         .route("/webhooks/pagci", post(handlers::webhooks::pagci))
         .route("/webhooks/stripe", post(handlers::webhooks::stripe))
+        .route(
+            "/webhooks/github/:id",
+            post(handlers::webhooks::github).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
         // Real-time gateway: ticket (authed) + WebSocket upgrade (ticket-authed).
         .route("/ws/ticket", get(ws::ticket))
         .route("/ws", get(ws::upgrade))
+        // SSE event stream for developers (API-key `events` scope).
+        .route("/events", get(ws::events_sse))
+        // Caddy on-demand-TLS gate (relay). No auth: host nginx restricts this
+        // path to the Tailscale subnet, so only the relay can reach it.
+        .route(
+            "/internal/domain-allowed",
+            get(handlers::containers::domain_allowed),
+        )
         // xterm.js serial terminal: backend WS proxy to the Proxmox console.
         .route("/ws/term/:id", get(handlers::term::term_proxy))
         .layer(from_fn_with_state(state.clone(), ratelimit::global_limiter))

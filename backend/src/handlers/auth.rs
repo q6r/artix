@@ -274,6 +274,9 @@ pub async fn register(
         locked_until: None,
         github_access_token: None,
         github_username: None,
+        free_ram_claimed: false,
+        bonus_ram_mb: None,
+        bonus_ram_expires_at: None,
     };
     let inserted = state.db.users().insert_one(&user).await?;
     let user_id = inserted
@@ -452,6 +455,9 @@ pub async fn request_code(
                 locked_until: None,
                 github_access_token: None,
                 github_username: None,
+                free_ram_claimed: false,
+                bonus_ram_mb: None,
+                bonus_ram_expires_at: None,
             };
             let inserted = state.db.users().insert_one(&user).await?;
             user.id = inserted.inserted_id.as_object_id();

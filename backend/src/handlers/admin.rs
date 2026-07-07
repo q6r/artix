@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 use bson::{doc, oid::ObjectId};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -45,6 +45,23 @@ pub struct UserAdminView {
     pub status: UserStatus,
     pub role_ids: Vec<String>,
     pub created_at: DateTime<Utc>,
+    /// Admin-granted container RAM (MB); 0 when none.
+    pub bonus_ram_mb: i64,
+    /// When the grant expires; `None` = lifetime (permanent).
+    pub bonus_ram_expires_at: Option<DateTime<Utc>>,
+}
+
+/// Parse an expiry from an ISO datetime or a `YYYY-MM-DD` date (end of day).
+fn parse_grant_expiry(s: &str) -> AppResult<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&Utc));
+    }
+    if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        if let Some(ndt) = d.and_hms_opt(23, 59, 59) {
+            return Ok(DateTime::from_naive_utc_and_offset(ndt, Utc));
+        }
+    }
+    Err(AppError::Validation("invalid expiry date".into()))
 }
 
 // ----------------------------- Users -----------------------------
@@ -75,6 +92,8 @@ pub async fn list_users(
             status: u.status,
             role_ids: u.role_ids.iter().map(|r| r.to_hex()).collect(),
             created_at: u.created_at,
+            bonus_ram_mb: u.bonus_ram_mb.unwrap_or(0),
+            bonus_ram_expires_at: u.bonus_ram_expires_at,
         });
     }
     Ok(Json(out))
@@ -101,12 +120,23 @@ pub async fn get_user(
         status: u.status,
         role_ids: u.role_ids.iter().map(|r| r.to_hex()).collect(),
         created_at: u.created_at,
+        bonus_ram_mb: u.bonus_ram_mb.unwrap_or(0),
+        bonus_ram_expires_at: u.bonus_ram_expires_at,
     }))
 }
 
 #[derive(Deserialize)]
 pub struct PatchUserReq {
     pub display_name: Option<String>,
+    /// Admin-granted container RAM in MB (absolute value; 0 removes the grant).
+    pub bonus_ram_mb: Option<i64>,
+    /// `true` = lifetime grant (no expiry). Ignored unless `bonus_ram_mb` is set.
+    #[serde(default)]
+    pub bonus_ram_lifetime: Option<bool>,
+    /// Expiry (ISO or `YYYY-MM-DD`) for a subscription-style grant. Used only
+    /// when `bonus_ram_lifetime` is not true.
+    #[serde(default)]
+    pub bonus_ram_expires_at: Option<String>,
 }
 
 pub async fn patch_user(
@@ -125,11 +155,30 @@ pub async fn patch_user(
         }
         set.insert("display_name", name);
     }
-    let res = state
-        .db
-        .users()
-        .update_one(doc! { "_id": oid }, doc! { "$set": set })
-        .await?;
+    let mut unset = doc! {};
+    if let Some(mb) = req.bonus_ram_mb {
+        if !(0..=131_072).contains(&mb) {
+            return Err(AppError::Validation("bonus_ram_mb out of range (0–131072)".into()));
+        }
+        set.insert("bonus_ram_mb", mb);
+        let date = req
+            .bonus_ram_expires_at
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if mb == 0 || req.bonus_ram_lifetime == Some(true) || date.is_none() {
+            // cleared grant, explicit lifetime, or no date → permanent (no expiry).
+            unset.insert("bonus_ram_expires_at", "");
+        } else {
+            let dt = parse_grant_expiry(date.unwrap())?;
+            set.insert("bonus_ram_expires_at", bson::DateTime::from_chrono(dt));
+        }
+    }
+    let mut update = doc! { "$set": set };
+    if !unset.is_empty() {
+        update.insert("$unset", unset);
+    }
+    let res = state.db.users().update_one(doc! { "_id": oid }, update).await?;
     if res.matched_count == 0 {
         return Err(AppError::NotFound);
     }

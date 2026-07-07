@@ -102,6 +102,9 @@ pub struct Config {
     /// Container agent (Docker VM) base URL + bearer token. Empty = disabled.
     pub container_agent_url: String,
     pub container_agent_token: String,
+    /// Public base URL GitHub can reach for push webhooks (e.g. https://artix.cloud).
+    /// Empty disables auto-redeploy registration.
+    pub public_webhook_base: String,
     pub billing_currency: String,
     /// Days a customer has to pay an invoice before the VPS is suspended.
     pub billing_grace_days: i64,
@@ -113,6 +116,33 @@ pub struct Config {
     pub billing_worker_enabled: bool,
     /// Grace period (days) after a VPS `expires_at` before it is suspended.
     pub expiry_grace_days: i64,
+    /// Public IP of the relay that fronts custom domains (Caddy on-demand TLS).
+    /// Customers point their domain's A record here. Not a secret.
+    pub custom_domain_relay_ip: String,
+
+    /// LiveKit (browser voice) — API key/secret to sign join tokens, and the
+    /// public wss URL the browser connects to. Secret is sensitive.
+    pub livekit_api_key: String,
+    pub livekit_api_secret: String,
+    pub livekit_url: String,
+    /// Internal LiveKit URL the backend uses for the server API (list
+    /// participants, etc.) — reaches the Docker VM directly, not via the relay.
+    pub livekit_host_url: String,
+
+    /// Minecraft public-port pool: a per-relay range distinct from the SSH range,
+    /// forwarded (frp TCP/UDP) to the container's published port on the Docker VM.
+    pub mc_port_min: u16,
+    pub mc_port_max: u16,
+    /// The Docker VM IP the host-side frpc dials for Minecraft ports (published
+    /// on the VM). Defaults to parsing the host from `container_agent_url`.
+    pub container_vm_ip: String,
+
+    /// Cloudflare API token + zone for writing DNS (Minecraft A/SRV records so
+    /// players connect by `<sub>.artix.cloud`). Empty disables the feature.
+    pub cloudflare_api_token: String,
+    pub cloudflare_zone_id: String,
+    /// Apex zone name the subdomains live under (e.g. "artix.cloud").
+    pub cloudflare_zone_name: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -239,12 +269,24 @@ impl Config {
             pagci_webhook_secret: opt("PAGCI_WEBHOOK_SECRET", ""),
             container_agent_url: opt("CONTAINER_AGENT_URL", ""),
             container_agent_token: opt("CONTAINER_AGENT_TOKEN", ""),
+            public_webhook_base: opt("PUBLIC_WEBHOOK_BASE", ""),
             billing_currency: opt("BILLING_CURRENCY", "BRL"),
             billing_grace_days: parse("BILLING_GRACE_DAYS", 3i64)?,
             billing_renew_lead_days: parse("BILLING_RENEW_LEAD_DAYS", 3i64)?,
             billing_pix_ttl_secs: parse("BILLING_PIX_TTL_SECONDS", 86_400i64)?,
             billing_worker_enabled: opt("BILLING_WORKER_ENABLED", "false") == "true",
             expiry_grace_days: parse("EXPIRY_GRACE_DAYS", 3i64)?,
+            custom_domain_relay_ip: opt("CUSTOM_DOMAIN_RELAY_IP", ""),
+            livekit_api_key: opt("LIVEKIT_API_KEY", ""),
+            livekit_api_secret: opt("LIVEKIT_API_SECRET", ""),
+            livekit_url: opt("LIVEKIT_URL", ""),
+            livekit_host_url: opt("LIVEKIT_HOST_URL", "http://10.0.0.29:7880"),
+            mc_port_min: parse("MC_PORT_MIN", 25565u16)?,
+            mc_port_max: parse("MC_PORT_MAX", 25764u16)?,
+            container_vm_ip: opt("CONTAINER_VM_IP", ""),
+            cloudflare_api_token: opt("CLOUDFLARE_API_TOKEN", ""),
+            cloudflare_zone_id: opt("CLOUDFLARE_ZONE_ID", ""),
+            cloudflare_zone_name: opt("CLOUDFLARE_ZONE_NAME", "artix.cloud"),
         })
     }
 }

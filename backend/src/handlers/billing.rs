@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     authn::AuthUser,
+    permissions::cap,
     billing::{self, NewSubscription},
     db::Collections,
     error::{AppError, AppResult},
@@ -48,10 +49,21 @@ pub struct CustomView {
 }
 
 #[derive(Serialize)]
+pub struct ContainerPlanView {
+    pub id: String,
+    pub name: String,
+    pub ram_mb: i64,
+    pub price_cents: i64,
+    pub currency: String,
+}
+
+#[derive(Serialize)]
 pub struct PlansResponse {
     pub plans: Vec<PlanView>,
     pub custom: CustomView,
     pub currency: String,
+    /// Container hosting plans (free tier first).
+    pub container_plans: Vec<ContainerPlanView>,
 }
 
 pub async fn list_plans(State(state): State<AppState>) -> Json<PlansResponse> {
@@ -79,6 +91,16 @@ pub async fn list_plans(State(state): State<AppState>) -> Json<PlansResponse> {
             }
         }
     }
+    let container_plans = billing::CONTAINER_PLANS
+        .iter()
+        .map(|p| ContainerPlanView {
+            id: p.id.to_string(),
+            name: p.name.to_string(),
+            ram_mb: p.ram_mb,
+            price_cents: p.price_cents,
+            currency: currency.clone(),
+        })
+        .collect();
     let c = &billing::CUSTOM;
     Json(PlansResponse {
         plans,
@@ -94,6 +116,7 @@ pub async fn list_plans(State(state): State<AppState>) -> Json<PlansResponse> {
             disk_max: c.disk_max,
         },
         currency,
+        container_plans,
     })
 }
 
@@ -130,6 +153,7 @@ pub async fn create_subscription(
     auth: AuthUser,
     Json(req): Json<CreateSubscriptionReq>,
 ) -> AppResult<Json<CheckoutResponse>> {
+    auth.scope(cap::BILLING)?;
     let (sub, invoice) = billing::create_subscription(
         &state,
         &auth.user,
@@ -155,6 +179,7 @@ pub async fn list_subscriptions(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> AppResult<Json<Vec<SubscriptionPublic>>> {
+    auth.scope(cap::BILLING)?;
     let mut cursor = state
         .db
         .subscriptions()
@@ -183,6 +208,7 @@ pub async fn get_subscription(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<SubscriptionPublic>> {
+    auth.scope(cap::BILLING)?;
     Ok(Json(owned_subscription(&state, &auth, &id).await?.public()))
 }
 
@@ -203,6 +229,7 @@ pub async fn cancel_subscription(
     Path(id): Path<String>,
     Json(req): Json<CancelReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    auth.scope(cap::BILLING)?;
     let sub = owned_subscription(&state, &auth, &id).await?;
     billing::cancel_subscription(&state, &sub, req.at_period_end).await?;
     Ok(Json(serde_json::json!({ "ok": true, "at_period_end": req.at_period_end })))
@@ -215,6 +242,7 @@ pub async fn list_invoices(
     auth: AuthUser,
     Query(p): Query<Pagination>,
 ) -> AppResult<Json<Vec<InvoicePublic>>> {
+    auth.scope(cap::BILLING)?;
     let mut cursor = state
         .db
         .invoices()
@@ -245,6 +273,7 @@ pub async fn get_invoice(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<InvoicePublic>> {
+    auth.scope(cap::BILLING)?;
     Ok(Json(owned_invoice(&state, &auth, &id).await?.public()))
 }
 
@@ -254,6 +283,7 @@ pub async fn pay_invoice(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<InvoicePublic>> {
+    auth.scope(cap::BILLING)?;
     let mut invoice = owned_invoice(&state, &auth, &id).await?;
     match invoice.status {
         InvoiceStatus::Paid => return Err(AppError::Conflict("invoice already paid".into())),

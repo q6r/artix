@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import SiteHeaderMobile from "@/components/SiteHeaderMobile";
+import SiteHeaderActions from "@/components/SiteHeaderActions";
 import { getT } from "@/lib/i18n";
 
 const links = [
@@ -31,18 +32,11 @@ export default async function SiteHeader() {
 
         {/* Desktop actions */}
         <div className="hidden items-center gap-3 md:flex">
-          <Link
-            href="/login"
-            className="text-sm text-white/70 transition-colors hover:text-white"
-          >
-            {t("nav.entrar")}
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-white/85"
-          >
-            {t("nav.criarConta")}
-          </Link>
+          <SiteHeaderActions
+            dashboardLabel={t("nav.painel")}
+            loginLabel={t("nav.entrar")}
+            registerLabel={t("nav.criarConta")}
+          />
         </div>
 
         {/* Mobile menu */}
@@ -50,6 +44,7 @@ export default async function SiteHeader() {
           links={links.map((l) => ({ label: t(l.key), href: l.href }))}
           loginLabel={t("nav.entrar")}
           registerLabel={t("nav.criarConta")}
+          dashboardLabel={t("nav.painel")}
         />
       </div>
     </header>

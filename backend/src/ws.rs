@@ -16,16 +16,23 @@ use axum::{
         Query, State,
     },
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     Json,
 };
 use bson::{doc, oid::ObjectId};
 use chrono::Utc;
+use futures_util::stream::Stream;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
-use crate::{auth::token, authn::AuthUser, db::Collections, state::AppState};
+use crate::{
+    auth::token, authn::AuthUser, db::Collections, error::AppError, permissions::cap,
+    state::AppState,
+};
 
 /// An event published to the hub and forwarded to every socket subscribed to
 /// its `topic`.
@@ -48,6 +55,42 @@ pub fn publish(state: &AppState, topic: String, event: &str, data: Value) {
         event: event.to_string(),
         data,
     });
+}
+
+// ----------------------------- SSE (developer gateway) -----------------------------
+
+/// `GET /events` — Server-Sent Events stream of the caller's account events
+/// (container actions, deploys, status). Auth via API key with the `events`
+/// scope (or a browser session). Avoids polling for external integrations.
+pub async fn events_sse(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, AppError> {
+    auth.scope(cap::EVENTS)?;
+    let topic = format!("user:{}", auth.user_id.to_hex());
+    let rx = state.hub.subscribe();
+
+    let stream = futures_util::stream::unfold(rx, move |mut rx| {
+        let topic = topic.clone();
+        async move {
+            loop {
+                match rx.recv().await {
+                    Ok(ev) if ev.topic == topic => {
+                        let sse = Event::default()
+                            .event(ev.event.clone())
+                            .json_data(&ev.data)
+                            .unwrap_or_else(|_| Event::default().event(ev.event));
+                        return Some((Ok(sse), rx));
+                    }
+                    Ok(_) => continue,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        }
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 // ----------------------------- Ticket -----------------------------

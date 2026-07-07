@@ -48,6 +48,13 @@ pub enum AppError {
 }
 
 impl AppError {
+    /// The user-facing message — the exact text sent in the JSON response body.
+    /// Use this (not `to_string()`, which is the generic `#[error(...)]` label)
+    /// whenever the concrete reason needs to be persisted or shown.
+    pub fn user_message(&self) -> String {
+        self.parts().2
+    }
+
     fn parts(&self) -> (StatusCode, &'static str, String) {
         match self {
             AppError::Validation(m) => (StatusCode::BAD_REQUEST, "validation_error", m.clone()),

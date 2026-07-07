@@ -18,7 +18,7 @@ use crate::{
     config::Config,
     db::Collections,
     error::{AppError, AppResult},
-    models::{RelaySetting, Server},
+    models::Server,
     state::AppState,
 };
 
@@ -75,6 +75,11 @@ pub struct RelayInfo {
 pub struct Frp {
     http: reqwest::Client,
     relays: Vec<Relay>,
+    /// Minecraft public-port range (global; one Docker VM) and the VM IP the
+    /// host-side frpc dials for the published MC ports.
+    mc_min: u16,
+    mc_max: u16,
+    vm_ip: String,
 }
 
 fn admin_port_of(url: &str) -> u16 {
@@ -124,7 +129,25 @@ impl Frp {
             .timeout(Duration::from_secs(15))
             .build()
             .ok()?;
-        Some(Self { http, relays })
+        // Docker VM IP for Minecraft port forwarding: explicit, else parsed from
+        // the container agent URL (e.g. http://10.0.0.29:9090 -> 10.0.0.29).
+        let vm_ip = if !cfg.container_vm_ip.trim().is_empty() {
+            cfg.container_vm_ip.trim().to_string()
+        } else {
+            cfg.container_agent_url
+                .split("://")
+                .nth(1)
+                .and_then(|s| s.split([':', '/']).next())
+                .unwrap_or("")
+                .to_string()
+        };
+        Some(Self {
+            http,
+            relays,
+            mc_min: cfg.mc_port_min,
+            mc_max: cfg.mc_port_max,
+            vm_ip,
+        })
     }
 
     fn relay_by_host(&self, host: &str) -> Option<&Relay> {
@@ -331,6 +354,67 @@ impl Frp {
             }
         }
 
+        // Minecraft containers forwarded by this relay: raw TCP (Java, 25565) or
+        // UDP (Bedrock, 19132), dialed at the Docker VM's published port. The port
+        // number is the same on the relay and the VM (localPort == remotePort).
+        if self.vm_ip.parse::<std::net::IpAddr>().is_ok() {
+            let mut mc = state
+                .db
+                .servers()
+                .find(doc! {
+                    "container.mc_relay_host": &relay.host,
+                    "container.mc_port": { "$ne": null },
+                })
+                .await?;
+            while mc.advance().await? {
+                let s = mc.deserialize_current()?;
+                if let (Some(c), Some(id)) = (s.container.as_ref(), s.id) {
+                    if let Some(port) = c.mc_port {
+                        if c.container_type == "voice" {
+                            // Mumble needs the same port over TCP + UDP.
+                            for proto in ["tcp", "udp"] {
+                                cfg.push_str(&format!(
+                                    "\n[[proxies]]\nname = \"voice-{}-{}\"\ntype = \"{}\"\nlocalIP = \"{}\"\nlocalPort = {}\nremotePort = {}\n",
+                                    id.to_hex(),
+                                    proto,
+                                    proto,
+                                    self.vm_ip,
+                                    port,
+                                    port,
+                                ));
+                            }
+                        } else {
+                            let proto = if c.edition.as_deref() == Some("bedrock") {
+                                "udp"
+                            } else {
+                                "tcp"
+                            };
+                            cfg.push_str(&format!(
+                                "\n[[proxies]]\nname = \"mc-{}\"\ntype = \"{}\"\nlocalIP = \"{}\"\nlocalPort = {}\nremotePort = {}\n",
+                                id.to_hex(),
+                                proto,
+                                self.vm_ip,
+                                port,
+                                port,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // LiveKit (browser voice SFU) runs on the Docker VM; forward its media
+        // ports (raw TCP + UDP) so browsers reach it via the relay's public IP.
+        // Only on the main relay whose IP LiveKit advertises as its node IP.
+        if relay.host == state.cfg.custom_domain_relay_ip
+            && self.vm_ip.parse::<std::net::IpAddr>().is_ok()
+        {
+            cfg.push_str(&format!(
+                "\n[[proxies]]\nname = \"livekit-ws\"\ntype = \"tcp\"\nlocalIP = \"{ip}\"\nlocalPort = 7880\nremotePort = 7880\n\n[[proxies]]\nname = \"livekit-tcp\"\ntype = \"tcp\"\nlocalIP = \"{ip}\"\nlocalPort = 7881\nremotePort = 7881\n\n[[proxies]]\nname = \"livekit-udp\"\ntype = \"udp\"\nlocalIP = \"{ip}\"\nlocalPort = 7882\nremotePort = 7882\n",
+                ip = self.vm_ip,
+            ));
+        }
+
         let put = self
             .http
             .put(format!("{}/api/config", relay.admin_url.trim_end_matches('/')))
@@ -391,6 +475,71 @@ impl Frp {
         Err(AppError::Unavailable("could not allocate relay port".into()))
     }
 
+    /// Minecraft public ports already allocated (global — one Docker VM).
+    async fn mc_used(&self, state: &AppState) -> AppResult<BTreeSet<i32>> {
+        let mut set = BTreeSet::new();
+        let mut cursor = state
+            .db
+            .servers()
+            .find(doc! { "container.mc_port": { "$ne": null } })
+            .await?;
+        while cursor.advance().await? {
+            let s = cursor.deserialize_current()?;
+            if let Some(p) = s.container.as_ref().and_then(|c| c.mc_port) {
+                set.insert(p);
+            }
+        }
+        Ok(set)
+    }
+
+    fn mc_alloc_in(&self, used: &BTreeSet<i32>) -> AppResult<i32> {
+        for p in (self.mc_min as i32)..=(self.mc_max as i32) {
+            if !used.contains(&p) {
+                return Ok(p);
+            }
+        }
+        Err(AppError::Unavailable("no free minecraft port".into()))
+    }
+
+    /// First enabled relay (MC uses one Docker VM, so relay choice is just "an
+    /// enabled entrypoint"; ports are globally unique across the VM).
+    async fn mc_pick_relay(&self, state: &AppState) -> AppResult<Relay> {
+        let disabled = self.disabled_names(state).await;
+        self.relays
+            .iter()
+            .find(|r| !disabled.contains(&r.name))
+            .cloned()
+            .ok_or_else(|| AppError::Unavailable("no relay available".into()))
+    }
+
+    /// Allocate a global MC port and persist it on the container, retrying on a
+    /// unique-index conflict (another provision grabbed the same port).
+    async fn mc_alloc_and_assign(
+        &self,
+        state: &AppState,
+        relay: &Relay,
+        server_id: Option<ObjectId>,
+    ) -> AppResult<i32> {
+        for _ in 0..8 {
+            let used = self.mc_used(state).await?;
+            let port = self.mc_alloc_in(&used)?;
+            match state
+                .db
+                .servers()
+                .update_one(
+                    doc! { "_id": server_id },
+                    doc! { "$set": { "container.mc_relay_host": &relay.host, "container.mc_port": port }},
+                )
+                .await
+            {
+                Ok(_) => return Ok(port),
+                Err(e) if e.to_string().contains("E11000") => continue,
+                Err(e) => return Err(AppError::Db(e)),
+            }
+        }
+        Err(AppError::Unavailable("could not allocate minecraft port".into()))
+    }
+
     /// Re-sync every relay (used after a delete so dropped VPS disappear).
     pub async fn sync(&self, state: &AppState) -> AppResult<()> {
         for r in &self.relays {
@@ -417,6 +566,25 @@ pub async fn ensure(state: &AppState, server: &Server) -> AppResult<Option<(Stri
     }
     let relay = frp.pick_relay(state).await?;
     let port = frp.alloc_and_assign(state, &relay, server.id).await?;
+    frp.sync_relay(state, &relay).await?;
+    Ok(Some((relay.host, port)))
+}
+
+/// Ensure a Minecraft container has a relay + public port and the frpc proxy is
+/// live. Idempotent: returns the stored `(host, port)` or allocates once. The
+/// caller must have already created the container (with the port published on
+/// the Docker VM) so the frpc proxy has a target. No-op when frp isn't set up.
+pub async fn mc_ensure(state: &AppState, server: &Server) -> AppResult<Option<(String, i32)>> {
+    let Some(frp) = state.frp.as_ref() else {
+        return Ok(None);
+    };
+    if let Some(c) = server.container.as_ref() {
+        if let (Some(h), Some(p)) = (c.mc_relay_host.clone(), c.mc_port) {
+            return Ok(Some((h, p)));
+        }
+    }
+    let relay = frp.mc_pick_relay(state).await?;
+    let port = frp.mc_alloc_and_assign(state, &relay, server.id).await?;
     frp.sync_relay(state, &relay).await?;
     Ok(Some((relay.host, port)))
 }

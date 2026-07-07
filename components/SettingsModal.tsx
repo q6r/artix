@@ -35,9 +35,11 @@ import {
   User,
   Users,
   MessageCircle,
+  Terminal,
   X,
 } from "lucide-react";
 import GithubIcon from "@/components/icons/GithubIcon";
+import DeveloperSection from "@/components/settings/DeveloperSection";
 
 type SectionId =
   | "perfil"
@@ -45,6 +47,7 @@ type SectionId =
   | "seguranca"
   | "notificacoes"
   | "conexoes"
+  | "desenvolvedor"
   | "geral"
   | "plano"
   | "membros"
@@ -66,6 +69,7 @@ const groups: {
         { id: "seguranca", labelKey: "dash.settings.nav.security", icon: Shield },
         { id: "notificacoes", labelKey: "dash.settings.nav.notifications", icon: Bell },
         { id: "conexoes", labelKey: "dash.settings.nav.connections", icon: Link2 },
+        { id: "desenvolvedor", labelKey: "dash.settings.nav.developer", icon: Terminal },
       ],
     },
     {
@@ -922,6 +926,8 @@ function renderSection(id: SectionId, orgProps: OrgSectionProps): React.ReactNod
       return <NotificationsSection />;
     case "conexoes":
       return <ConnectionsSection />;
+    case "desenvolvedor":
+      return <DeveloperSection />;
     case "geral":
       return <GeneralSection {...orgProps} />;
     case "plano":

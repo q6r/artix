@@ -27,6 +27,10 @@ pub struct AuthUser {
     pub user_id: ObjectId,
     pub session_id: ObjectId,
     pub permissions: Vec<String>,
+    /// `None` when authenticated by a browser session (full access to the user's
+    /// own resources). `Some(scopes)` when authenticated by an API key — the
+    /// capability scopes it was granted (see `permissions::cap`).
+    pub api_scopes: Option<Vec<String>>,
 }
 
 impl AuthUser {
@@ -36,6 +40,26 @@ impl AuthUser {
             Ok(())
         } else {
             Err(AppError::Forbidden)
+        }
+    }
+
+    /// Capability gate for API keys. A session (no `api_scopes`) always passes;
+    /// an API key passes only if it holds this capability (or `*`).
+    pub fn scope(&self, cap: &str) -> Result<(), AppError> {
+        match &self.api_scopes {
+            None => Ok(()),
+            Some(scopes) if scopes.iter().any(|s| s == "*" || s == cap) => Ok(()),
+            Some(_) => Err(AppError::Forbidden),
+        }
+    }
+
+    /// Reject API keys — for actions only a logged-in session may take
+    /// (e.g. managing API keys themselves, changing password).
+    pub fn require_session(&self) -> Result<(), AppError> {
+        if self.api_scopes.is_some() {
+            Err(AppError::Forbidden)
+        } else {
+            Ok(())
         }
     }
 
@@ -80,6 +104,11 @@ impl FromRequestParts<AppState> for AuthUser {
             .strip_prefix("Bearer ")
             .ok_or(AppError::Unauthorized)?;
 
+        // API-key authentication (`Bearer ak_…`) — carries capability scopes.
+        if raw.starts_with("ak_") {
+            return AuthUser::from_api_key(raw, state).await;
+        }
+
         let now = Utc::now().timestamp();
         let claims = token::verify_access(raw, &state.cfg.auth_token_secret, now)
             .map_err(|_| AppError::Unauthorized)?;
@@ -120,6 +149,53 @@ impl FromRequestParts<AppState> for AuthUser {
             user_id,
             session_id,
             permissions,
+            api_scopes: None,
+        })
+    }
+}
+
+impl AuthUser {
+    /// Resolve an `ak_…` API key into an `AuthUser` carrying the key's scopes.
+    async fn from_api_key(key: &str, state: &AppState) -> Result<Self, AppError> {
+        let hash = token::hash_refresh(key, &state.cfg.auth_refresh_pepper);
+        let now = Utc::now();
+        let api_key: ApiKey = state
+            .db
+            .api_keys()
+            .find_one(doc! { "key_hash": &hash, "revoked": false })
+            .await?
+            .ok_or(AppError::Unauthorized)?;
+        if api_key.expires_at.map(|e| e <= now).unwrap_or(false) {
+            return Err(AppError::Unauthorized);
+        }
+        let user = state
+            .db
+            .users()
+            .find_one(doc! { "_id": api_key.user_id })
+            .await?
+            .ok_or(AppError::Unauthorized)?;
+        if matches!(user.status, UserStatus::Banned | UserStatus::Suspended) {
+            return Err(AppError::Forbidden);
+        }
+        let permissions = resolve_permissions(state, &user).await?;
+        let key_id = api_key.id.unwrap_or_default();
+
+        // Best-effort last-used stamp.
+        let _ = state
+            .db
+            .api_keys()
+            .update_one(
+                doc! { "_id": key_id },
+                doc! { "$set": { "last_used_at": bson::DateTime::from_chrono(now) }},
+            )
+            .await;
+
+        Ok(AuthUser {
+            user,
+            user_id: api_key.user_id,
+            session_id: key_id, // no session for key auth; carry the key id
+            permissions,
+            api_scopes: Some(api_key.scopes),
         })
     }
 }

@@ -18,15 +18,22 @@ pub struct RepoLite {
     pub updated_at: Option<String>,
 }
 
-/// Decrypt the caller's GitHub token, or a friendly error if not linked.
-pub(crate) fn github_token(state: &AppState, auth: &AuthUser) -> AppResult<String> {
-    let sealed = auth
-        .user
+/// Decrypt a user's stored GitHub token, or a friendly error if not linked.
+pub(crate) fn github_token_for_user(
+    state: &AppState,
+    user: &crate::models::User,
+) -> AppResult<String> {
+    let sealed = user
         .github_access_token
         .as_deref()
         .ok_or_else(|| AppError::Validation("link GitHub first".into()))?;
     let bytes = crate::secretbox::open(&state.cfg.auth_token_secret, sealed)?;
     String::from_utf8(bytes).map_err(|_| AppError::Internal("token decode".into()))
+}
+
+/// Decrypt the caller's GitHub token, or a friendly error if not linked.
+pub(crate) fn github_token(state: &AppState, auth: &AuthUser) -> AppResult<String> {
+    github_token_for_user(state, &auth.user)
 }
 
 /// GET /account/github/repos — the caller's repos (owner + collaborator + org).

@@ -1,13 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronRight, Plus, Boxes } from "lucide-react";
 import FadeIn from "@/components/FadeIn";
 import Skeleton from "@/components/Skeleton";
 import { useLang } from "@/components/LanguageProvider";
 import ContainerStatusBadge from "@/components/containers/ContainerStatusBadge";
+import { RamUsage, fmtRam } from "@/components/containers/CreateContainer";
 import { useQuery } from "@/lib/api/query";
-import type { Server } from "@/lib/api/types";
+import type { Server, RamBalance } from "@/lib/api/types";
+
+const NEW_HREF = "/dashboard/containers/new";
 
 function Row({ c }: { c: Server }) {
   const { t } = useLang();
@@ -25,14 +29,26 @@ function Row({ c }: { c: Server }) {
           <ContainerStatusBadge status={c.container?.status} />
         </div>
         <p className="truncate text-xs text-white/45">
-          {c.container?.container_type === "site" ? "Site" : "Bot de Discord"}
-          {c.container?.runtime ? ` · ${c.container.runtime}` : ""}
-          {!c.container?.deployed ? ` · ${t("cont.notDeployed")}` : ""}
+          {c.container?.container_type === "minecraft" ? (
+            <>
+              {t("cont.type.minecraft")}
+              {c.container?.software ? ` · ${c.container.software}` : ""}
+              {c.container?.version ? ` ${c.container.version}` : ""}
+            </>
+          ) : c.container?.container_type === "voice" ? (
+            t("cont.type.voice")
+          ) : (
+            <>
+              {c.container?.container_type === "site" ? t("cont.type.site") : t("cont.type.bot")}
+              {c.container?.runtime ? ` · ${c.container.runtime}` : ""}
+              {!c.container?.deployed ? ` · ${t("cont.notDeployed")}` : ""}
+            </>
+          )}
         </p>
       </div>
       <div className="hidden text-right sm:block">
-        <p className="text-xs uppercase text-white/45">{c.plan}</p>
-        <p className="text-sm font-medium">{c.container?.ram_mb ?? 256} MB</p>
+        <p className="text-sm font-medium">{fmtRam(c.container?.ram_mb ?? 256)}</p>
+        <p className="text-xs text-white/45">RAM</p>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-white/30" />
     </Link>
@@ -41,8 +57,9 @@ function Row({ c }: { c: Server }) {
 
 export default function ContainersClient() {
   const { t } = useLang();
+  const router = useRouter();
   const { data, error, loading } = useQuery<Server[]>("containers", { refreshInterval: 8000 });
-  // Defensive: only render actual containers even if the endpoint ever mixes rows.
+  const { data: ram } = useQuery<RamBalance>("containers/ram", { refreshInterval: 8000 });
   const containers = (data ?? []).filter((s) => s.type === 1);
 
   if (loading) return <ListSkeleton />;
@@ -56,13 +73,15 @@ export default function ContainersClient() {
           <p className="mt-1 text-sm text-white/55">{t("cont.subtitle")}</p>
         </div>
         <Link
-          href="/dashboard/billing/new"
+          href={NEW_HREF}
           className="flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-black transition-colors hover:bg-white/85"
         >
           <Plus className="h-4 w-4" />
           {t("cont.new")}
         </Link>
       </FadeIn>
+
+      <RamUsage ram={ram} onBuy={() => router.push(NEW_HREF)} />
 
       {containers.length === 0 ? (
         <FadeIn
@@ -72,7 +91,7 @@ export default function ContainersClient() {
           <p className="text-lg font-semibold tracking-tight">{t("cont.empty.title")}</p>
           <p className="mt-1 max-w-sm text-sm text-white/50">{t("cont.empty.desc")}</p>
           <Link
-            href="/dashboard/billing/new"
+            href={NEW_HREF}
             className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl border border-neutral-950 bg-neutral-900 px-4 text-sm font-medium transition-colors hover:bg-neutral-800"
           >
             <Plus className="h-4 w-4" />
@@ -103,6 +122,7 @@ function ListSkeleton() {
         </div>
         <Skeleton className="h-9 w-28 rounded-full" />
       </div>
+      <Skeleton className="h-24 rounded-2xl" />
       <div className="divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="flex items-center gap-4 p-4">

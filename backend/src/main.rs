@@ -1,4 +1,4 @@
-use artixcloud_api::{billing, build_router, config::Config, db, seed, state::AppState};
+use artixcloud_api::{billing, build_router, config::Config, db, handlers, seed, state::AppState};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -23,6 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     seed(&state).await?;
     billing::spawn_worker(state.clone());
     billing::spawn_crypto_poller(state.clone());
+    handlers::containers::spawn_status_worker(state.clone());
 
     let app = build_router(state);
 

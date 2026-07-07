@@ -44,6 +44,102 @@ pub const DEFAULT_PLANS: &[PlanDef] = &[
     PlanDef { id: "cloud16", vcpu: 8, ram_gb: 32, disk_gb: 400, price_cents: 22990 },
 ];
 
+/// Container RAM packs. Buying one grants `ram_mb` of RAM to the account (a
+/// pool the user distributes across containers) — it is NOT a single container.
+pub struct ContainerPlanDef {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub ram_mb: i64,
+    pub price_cents: i64,
+}
+
+pub const CONTAINER_PLANS: &[ContainerPlanDef] = &[
+    ContainerPlanDef { id: "c-1gb", name: "1 GB", ram_mb: 1024, price_cents: 599 },
+    ContainerPlanDef { id: "c-2gb", name: "2 GB", ram_mb: 2048, price_cents: 1099 },
+    ContainerPlanDef { id: "c-4gb", name: "4 GB", ram_mb: 4096, price_cents: 2499 },
+    ContainerPlanDef { id: "c-6gb", name: "6 GB", ram_mb: 6144, price_cents: 3499 },
+    ContainerPlanDef { id: "c-8gb", name: "8 GB", ram_mb: 8192, price_cents: 4499 },
+];
+
+/// The one-time free container RAM grant (MB) an account can claim. Accounts
+/// start with 0 RAM and claim this to run their first (small) container.
+pub const FREE_CLAIM_MB: i64 = 256;
+
+pub fn container_plan(id: &str) -> Option<&'static ContainerPlanDef> {
+    CONTAINER_PLANS.iter().find(|p| p.id == id)
+}
+
+/// Buy a container RAM pack: create a RAM-grant subscription + first invoice.
+/// No container is created — the RAM becomes available on the account once paid,
+/// and the user creates/sizes containers from that pool.
+pub async fn create_container_subscription(
+    state: &AppState,
+    user: &User,
+    plan_id: &str,
+    method: Option<&str>,
+) -> AppResult<(Subscription, Invoice)> {
+    let plan = container_plan(plan_id).ok_or_else(|| AppError::Validation("unknown plan".into()))?;
+    if plan.price_cents <= 0 {
+        return Err(AppError::Validation("this plan is not purchasable".into()));
+    }
+    let method = method.unwrap_or("crypto").to_string();
+    match method.as_str() {
+        "crypto" if state.crypto.is_none() => {
+            return Err(AppError::Unavailable("crypto billing unavailable".into()))
+        }
+        "pix" if state.pagci.is_none() => {
+            return Err(AppError::Unavailable("pix billing unavailable".into()))
+        }
+        "stripe" if state.stripe.is_none() => {
+            return Err(AppError::Unavailable("stripe billing unavailable".into()))
+        }
+        "crypto" | "pix" | "stripe" => {}
+        _ => return Err(AppError::Validation("unknown payment method".into())),
+    }
+    let user_id = user.id.ok_or(AppError::Unauthorized)?;
+    let now = Utc::now();
+
+    // RAM-grant subscription (no server): the active subscription IS the grant.
+    let mut subscription = Subscription {
+        id: None,
+        user_id,
+        server_id: None,
+        plan: plan.id.to_string(),
+        status: SubscriptionStatus::PendingPayment,
+        price_cents: plan.price_cents,
+        currency: state.cfg.billing_currency.clone(),
+        interval: "monthly".into(),
+        provider: Some(method.clone()),
+        current_period_start: None,
+        current_period_end: None,
+        cancel_at_period_end: false,
+        created_at: now,
+        updated_at: now,
+    };
+    subscription.id = state
+        .db
+        .subscriptions()
+        .insert_one(&subscription)
+        .await?
+        .inserted_id
+        .as_object_id();
+
+    // 3) First invoice + charge.
+    let period_start = now;
+    let period_end = add_months(now, 1);
+    let invoice = build_invoice(
+        state,
+        user_id,
+        subscription.id.unwrap(),
+        plan.price_cents,
+        period_start,
+        period_end,
+        now,
+    );
+    let invoice = persist_and_charge(state, user, invoice, &method).await?;
+    Ok((subscription, invoice))
+}
+
 /// Look up a plan by slug from the DB.
 pub async fn find_plan(state: &AppState, slug: &str) -> AppResult<Option<Plan>> {
     Ok(state.db.plans().find_one(doc! { "slug": slug }).await?)
@@ -615,6 +711,32 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
         return Ok(());
     }
 
+    // Container RAM pack: no server to provision — the now-active subscription IS
+    // the grant, so the RAM is immediately available on the account.
+    if container_plan(&sub.plan).is_some() {
+        if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+            email::send_payment_confirmed(state, &user, invoice).await;
+        }
+        let ram_gb = container_plan(&sub.plan).map(|p| p.ram_mb / 1024).unwrap_or(0);
+        crate::notify::notify(
+            state,
+            sub.user_id,
+            "container",
+            "RAM ativada",
+            &format!("Seus {ram_gb} GB de RAM já estão disponíveis para criar containers."),
+            Some("/dashboard/containers".into()),
+        )
+        .await;
+        let invoice_id = invoice.id.unwrap_or_default().to_hex();
+        crate::ws::publish(
+            state,
+            format!("invoice:{invoice_id}"),
+            "paid",
+            serde_json::to_value(invoice.public()).unwrap_or_default(),
+        );
+        return Ok(());
+    }
+
     let Some(server_id) = sub.server_id else { return Ok(()) };
     let Some(server) = state.db.servers().find_one(doc! { "_id": server_id }).await? else {
         return Ok(());
@@ -712,6 +834,26 @@ pub async fn handle_payment_event(state: &AppState, event: &str, payment_id: &st
 
 /// Cancel a subscription. With `at_period_end`, it keeps running until the paid
 /// period ends; otherwise it is suspended immediately.
+/// Cancel the dedicated-IP order tied to a subscription, if any. Dedicated-IP
+/// subs carry no `server_id` (the pending order is a `DedicatedIp` doc, not a
+/// placeholder VPS), so whenever such a sub is cancelled its `DedicatedIp` must
+/// be cancelled too — otherwise it lingers as `pending_payment`, which blocks a
+/// fresh purchase (the "one non-cancelled IP per VPS" guard) and leaves the
+/// dashboard pointing at the now-dead checkout.
+async fn cancel_dedicated_ip_of(state: &AppState, sub: &Subscription) {
+    if sub.plan != "dedicated-ip" {
+        return;
+    }
+    let _ = state
+        .db
+        .dedicated_ips()
+        .update_many(
+            doc! { "subscription_id": sub.id, "status": { "$ne": "cancelled" } },
+            doc! { "$set": { "status": "cancelled", "updated_at": bson::DateTime::from_chrono(Utc::now()) }},
+        )
+        .await;
+}
+
 pub async fn cancel_subscription(
     state: &AppState,
     sub: &Subscription,
@@ -737,6 +879,7 @@ pub async fn cancel_subscription(
             )
             .await?;
         suspend_server_of(state, sub, ServerState::Stopped).await;
+        cancel_dedicated_ip_of(state, sub).await;
     }
     Ok(())
 }
@@ -810,6 +953,7 @@ pub async fn run_due_cycle(state: &AppState) -> AppResult<()> {
             )
             .await;
         suspend_server_of(state, &sub, ServerState::Stopped).await;
+        cancel_dedicated_ip_of(state, &sub).await;
     }
 
     // 3) Suspend subscriptions with an invoice unpaid past its due date.
@@ -931,6 +1075,7 @@ async fn suspend_for_nonpayment(state: &AppState, invoice: &Invoice) -> AppResul
                 doc! { "$set": { "status": "cancelled", "updated_at": bson::DateTime::from_chrono(now) }},
             )
             .await;
+        cancel_dedicated_ip_of(state, &sub).await;
         return Ok(());
     }
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence } from "motion/react";
-import { Plus, Trash2, X, Shield, Pencil, Check } from "lucide-react";
+import { Plus, Trash2, X, Shield, Pencil, Check, Ban, Play } from "lucide-react";
 import FadeIn from "@/components/FadeIn";
 import Select from "@/components/Select";
 import Sheet from "@/components/ui/Sheet";
@@ -33,6 +33,7 @@ import type {
 
 type Tab =
   | "servers"
+  | "containers"
   | "relays"
   | "storage"
   | "dedipips"
@@ -60,6 +61,7 @@ export default function AdminClient() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "servers", label: t("admin.tab.servers") },
+    { id: "containers", label: t("admin.tab.containers") },
     { id: "relays", label: t("admin.tab.relays") },
     { id: "storage", label: t("admin.tab.storage") },
     { id: "dedipips", label: t("admin.tab.dedipips") },
@@ -96,6 +98,7 @@ export default function AdminClient() {
       </FadeIn>
 
       {tab === "servers" && <ServersPanel />}
+      {tab === "containers" && <ContainersAdminPanel />}
       {tab === "relays" && <RelaysPanel />}
       {tab === "storage" && <StoragePanel />}
       {tab === "dedipips" && <DedicatedIpsPanel />}
@@ -122,8 +125,8 @@ const serverStateStyles: Record<string, string> = {
 };
 
 /**
- * Owner picker. Past 10 users a search box (name or email) is shown above the
- * select so the list stays manageable; below that it's a plain select.
+ * Owner picker. The dropdown has a built-in search box (filters by name or
+ * email) that auto-appears once the list grows past a handful of users.
  */
 function UserSelect({
   value,
@@ -137,46 +140,18 @@ function UserSelect({
   placeholder?: string;
 }) {
   const { t } = useLang();
-  const [q, setQ] = useState("");
-  const opt = (list: AdminUser[]) =>
-    list.map((u) => ({ value: u.id, label: `${u.display_name} \u00b7 ${u.email}` }));
-
-  if (users.length <= 10) {
-    return (
-      <Select
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        className="h-11 px-4 text-sm"
-        options={opt(users)}
-      />
-    );
-  }
-
-  const needle = q.trim().toLowerCase();
-  const filtered = needle
-    ? users.filter((u) => `${u.display_name} ${u.email}`.toLowerCase().includes(needle))
-    : users;
-  const selected = users.find((u) => u.id === value);
-  const list =
-    selected && !filtered.some((u) => u.id === value) ? [selected, ...filtered] : filtered;
-
   return (
-    <div className="flex flex-col gap-2">
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={t("admin.servers.searchOwner")}
-        className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none placeholder:text-white/35 focus:border-white/30"
-      />
-      <Select
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        className="h-11 px-4 text-sm"
-        options={opt(list.slice(0, 50))}
-      />
-    </div>
+    <Select
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      className="h-11 px-4 text-sm"
+      searchPlaceholder={t("admin.servers.searchOwner")}
+      options={users.map((u) => ({
+        value: u.id,
+        label: `${u.display_name} \u00b7 ${u.email}`,
+      }))}
+    />
   );
 }
 
@@ -238,11 +213,14 @@ function ServersPanel() {
   if (loading) return <p className="text-sm text-white/50">{t("admin.loading")}</p>;
   if (error || !servers) return <p className="text-sm text-red-300">{t("admin.error")}</p>;
 
+  // VPS only — container servers (type 1) live in their own admin tab.
+  const vps = servers.filter((s) => s.type !== 1);
+
   return (
     <FadeIn className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-white/55">
-          {servers.length} {t("admin.tab.servers")}
+          {vps.length} {t("admin.tab.servers")}
         </p>
         <button
           type="button"
@@ -266,11 +244,11 @@ function ServersPanel() {
         />
       )}
 
-      {servers.length === 0 ? (
+      {vps.length === 0 ? (
         <p className="text-sm text-white/45">{t("admin.servers.empty")}</p>
       ) : (
         <div className="space-y-3">
-          {servers.map((s) => (
+          {vps.map((s) => (
             <ServerRow key={s.id} server={s} onEdit={() => setEditing(s)} />
           ))}
         </div>
@@ -446,6 +424,8 @@ function ServerRow({ server, onEdit }: { server: AdminServer; onEdit: () => void
   const { t, locale } = useLang();
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const suspended = server.state === "suspended";
 
   const remove = async () => {
     if (!(await confirm({ title: t("admin.servers.confirmDelete"), confirmLabel: t("common.delete"), danger: true }))) return;
@@ -503,6 +483,18 @@ function ServerRow({ server, onEdit }: { server: AdminServer; onEdit: () => void
         </button>
         <button
           type="button"
+          onClick={() => setSuspendOpen(true)}
+          className={
+            suspended
+              ? "inline-flex h-9 items-center gap-2 rounded-xl border border-emerald-500/30 px-3 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/10"
+              : "inline-flex h-9 items-center gap-2 rounded-xl border border-amber-500/30 px-3 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/10"
+          }
+        >
+          {suspended ? <Play className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+          {t(suspended ? "admin.servers.reactivate" : "admin.servers.suspend")}
+        </button>
+        <button
+          type="button"
           onClick={remove}
           disabled={busy}
           className="ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-red-500/30 px-3 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
@@ -511,7 +503,208 @@ function ServerRow({ server, onEdit }: { server: AdminServer; onEdit: () => void
           {t("admin.servers.delete")}
         </button>
       </div>
+
+      {suspendOpen && <SuspendModal server={server} onClose={() => setSuspendOpen(false)} />}
     </div>
+  );
+}
+
+// Client-side mirror of the backend's minimal Markdown renderer, used only to
+// preview the admin's custom email body. Escape first, then re-introduce the
+// same subset (bold / italic / code / links / headings).
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function inlineMd(s: string): string {
+  let out = escHtml(s);
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text: string, url: string) => {
+    const u = url.trim();
+    const safe = /^(https?:\/\/|mailto:)/i.test(u) ? u.replace(/"/g, "%22") : "#";
+    return `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-white underline">${text}</a>`;
+  });
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
+  out = out.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  out = out.replace(/`([^`]+)`/g, '<code class="rounded bg-white/10 px-1 py-0.5 text-xs">$1</code>');
+  return out;
+}
+
+function renderPreview(md: string): string {
+  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const html: string[] = [];
+  let para: string[] = [];
+  const flush = () => {
+    if (para.length) {
+      html.push(`<p class="mb-3 leading-relaxed">${para.join("<br>")}</p>`);
+      para = [];
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) flush();
+    else if (line.startsWith("### ")) {
+      flush();
+      html.push(`<h3 class="mb-1.5 mt-3 text-base font-bold text-white">${inlineMd(line.slice(4))}</h3>`);
+    } else if (line.startsWith("## ")) {
+      flush();
+      html.push(`<h2 class="mb-2 mt-3 text-lg font-bold text-white">${inlineMd(line.slice(3))}</h2>`);
+    } else if (line.startsWith("# ")) {
+      flush();
+      html.push(`<h1 class="mb-2 mt-3 text-xl font-extrabold text-white">${inlineMd(line.slice(2))}</h1>`);
+    } else para.push(inlineMd(line));
+  }
+  flush();
+  return html.join("");
+}
+
+function SuspendModal({ server, onClose }: { server: AdminServer; onClose: () => void }) {
+  const { t } = useLang();
+  const suspended = server.state === "suspended";
+  const [notify, setNotify] = useState(false);
+  const [custom, setCustom] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`admin/servers/${server.id}/${suspended ? "unsuspend" : "suspend"}`, {
+        method: "POST",
+        json: {
+          notify,
+          custom: notify && custom,
+          subject: subject.trim() || undefined,
+          title: title.trim() || undefined,
+          message: message || undefined,
+        },
+      });
+      await mutate("admin/servers");
+      onClose();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : t("admin.error"));
+      setBusy(false);
+    }
+  };
+
+  const inputCls =
+    "h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none focus:border-white/30";
+  const seg = (active: boolean) =>
+    `h-10 rounded-xl border text-sm font-medium transition-colors ${
+      active
+        ? "border-white/30 bg-white/10 text-white"
+        : "border-white/10 bg-white/[0.02] text-white/55 hover:text-white/80"
+    }`;
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      title={`${t(suspended ? "admin.servers.reactivateTitle" : "admin.servers.suspendTitle")} · ${server.name}`}
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-white/55">
+          {t(suspended ? "admin.servers.reactivateDesc" : "admin.servers.suspendDesc")}
+        </p>
+
+        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+          <input
+            type="checkbox"
+            checked={notify}
+            onChange={(e) => setNotify(e.target.checked)}
+            className="h-4 w-4 accent-white"
+          />
+          <span className="text-sm text-white/80">{t("admin.servers.notify")}</span>
+        </label>
+
+        {notify && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setCustom(false)} className={seg(!custom)}>
+                {t("admin.servers.msgDefault")}
+              </button>
+              <button type="button" onClick={() => setCustom(true)} className={seg(custom)}>
+                {t("admin.servers.msgCustom")}
+              </button>
+            </div>
+
+            {custom && (
+              <div className="space-y-3">
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-white/70">{t("admin.servers.emailSubject")}</span>
+                  <input
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder={t("admin.servers.subjectPlaceholder")}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-white/70">{t("admin.servers.emailTitle")}</span>
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder={t("admin.servers.titlePlaceholder")}
+                    className={inputCls}
+                  />
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-white/70">{t("admin.servers.emailBody")}</span>
+                  <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    rows={7}
+                    placeholder={t("admin.servers.bodyPlaceholder")}
+                    className="w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm leading-relaxed outline-none focus:border-white/30"
+                  />
+                </label>
+                <p className="text-xs text-white/40">{t("admin.servers.mdHint")}</p>
+
+                {message.trim() && (
+                  <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+                    <p className="mb-2 text-[11px] uppercase tracking-wide text-white/35">
+                      {t("admin.servers.preview")}
+                    </p>
+                    <div
+                      className="text-sm text-white/75"
+                      dangerouslySetInnerHTML={{ __html: renderPreview(message) }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {err && <p className="text-sm text-red-300">{err}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={onClose}
+            className="inline-flex h-10 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5"
+          >
+            {t("admin.servers.cancel")}
+          </button>
+          <button
+            onClick={submit}
+            disabled={busy}
+            className={
+              suspended
+                ? "inline-flex h-10 items-center rounded-xl bg-emerald-500 px-5 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-50"
+                : "inline-flex h-10 items-center rounded-xl bg-amber-500 px-5 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:opacity-50"
+            }
+          >
+            {busy
+              ? t(suspended ? "admin.servers.reactivating" : "admin.servers.suspending")
+              : t(suspended ? "admin.servers.reactivate" : "admin.servers.suspend")}
+          </button>
+        </div>
+      </div>
+    </Sheet>
   );
 }
 
@@ -663,6 +856,113 @@ function ServerEditModal({
           </div>
         </div>
     </Sheet>
+  );
+}
+
+// ----------------------------- Containers -----------------------------
+
+function AdminContainerRow({ c }: { c: AdminServer }) {
+  const { t } = useLang();
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState(false);
+  const ct = c.container;
+
+  const remove = async () => {
+    if (
+      !(await confirm({
+        title: t("admin.containers.confirmDelete"),
+        confirmLabel: t("common.delete"),
+        danger: true,
+      }))
+    )
+      return;
+    setBusy(true);
+    try {
+      await api(`admin/servers/${c.id}`, { method: "DELETE" });
+      await mutate("admin/servers");
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  const typeLabel =
+    ct?.container_type === "minecraft"
+      ? t("cont.type.minecraft")
+      : ct?.container_type === "site"
+        ? t("cont.type.site")
+        : t("cont.type.bot");
+
+  const detail =
+    ct?.container_type === "minecraft"
+      ? [ct?.software, ct?.version, ct?.subdomain, ct?.ram_mb ? `${ct.ram_mb}MB` : null]
+          .filter(Boolean)
+          .join(" · ")
+      : [
+          ct?.runtime,
+          ct?.custom_domain || (ct?.subdomain ? `${ct.subdomain}.apps.artix.cloud` : null),
+          ct?.ram_mb ? `${ct.ram_mb}MB` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate font-medium">{c.name}</p>
+          <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/55">
+            {typeLabel}
+          </span>
+        </div>
+        <p className="truncate text-xs text-white/45">{detail || c.node}</p>
+      </div>
+      <div className="w-44 shrink-0">
+        <OwnerBadge owner={c.owner} />
+      </div>
+      <span
+        className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+          serverStateStyles[c.state] ?? serverStateStyles.stopped
+        }`}
+      >
+        {t(`admin.servers.state.${c.state}`)}
+      </span>
+      <button
+        type="button"
+        onClick={remove}
+        disabled={busy}
+        className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-red-500/30 px-3 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+      >
+        <Trash2 className="h-4 w-4" />
+        {t("admin.servers.delete")}
+      </button>
+    </div>
+  );
+}
+
+function ContainersAdminPanel() {
+  const { t } = useLang();
+  const { data: servers, error, loading } = useQuery<AdminServer[]>("admin/servers");
+
+  if (loading) return <p className="text-sm text-white/50">{t("admin.loading")}</p>;
+  if (error || !servers) return <p className="text-sm text-red-300">{t("admin.error")}</p>;
+
+  const containers = servers.filter((s) => s.type === 1);
+
+  return (
+    <FadeIn className="space-y-4">
+      <p className="text-sm text-white/55">
+        {containers.length} {t("admin.tab.containers")}
+      </p>
+      {containers.length === 0 ? (
+        <p className="text-sm text-white/45">{t("admin.containers.empty")}</p>
+      ) : (
+        <div className="space-y-3">
+          {containers.map((c) => (
+            <AdminContainerRow key={c.id} c={c} />
+          ))}
+        </div>
+      )}
+    </FadeIn>
   );
 }
 
@@ -1987,7 +2287,7 @@ function UserRow({
   roles: Role[];
   roleById: Map<string, Role>;
 }) {
-  const { t } = useLang();
+  const { t, locale } = useLang();
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -2013,6 +2313,35 @@ function UserRow({
       await mutate("admin/users");
     } catch {
       /* ignore */
+    }
+  };
+
+  const savedMb = user.bonus_ram_mb ?? 0;
+  const [ramGb, setRamGb] = useState(String(savedMb / 1024));
+  const [lifetime, setLifetime] = useState(user.bonus_ram_expires_at == null);
+  const [expiry, setExpiry] = useState(
+    user.bonus_ram_expires_at ? toDateInput(user.bonus_ram_expires_at) : "",
+  );
+  const [ramBusy, setRamBusy] = useState(false);
+  const saveRam = async () => {
+    const gb = Number(ramGb);
+    if (ramBusy || !Number.isFinite(gb) || gb < 0) return;
+    if (gb > 0 && !lifetime && !expiry) return; // subscription needs a date
+    setRamBusy(true);
+    try {
+      await api(`admin/users/${user.id}`, {
+        method: "PATCH",
+        json: {
+          bonus_ram_mb: Math.round(gb * 1024),
+          bonus_ram_lifetime: lifetime,
+          ...(lifetime ? {} : { bonus_ram_expires_at: expiry }),
+        },
+      });
+      await mutate("admin/users");
+    } catch {
+      /* ignore */
+    } finally {
+      setRamBusy(false);
     }
   };
 
@@ -2075,6 +2404,71 @@ function UserRow({
           </button>
         </div>
       )}
+
+      <div className="mt-3 space-y-2 border-t border-white/5 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-white/55">{t("admin.users.ram")}</span>
+          <input
+            type="number"
+            min={0}
+            step={0.25}
+            value={ramGb}
+            onChange={(e) => setRamGb(e.target.value)}
+            className="h-9 w-20 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-center text-sm outline-none focus:border-white/30"
+          />
+          <span className="text-xs text-white/40">GB</span>
+          <div className="inline-flex overflow-hidden rounded-lg border border-white/10">
+            <button
+              type="button"
+              onClick={() => setLifetime(false)}
+              className={`h-9 px-3 text-xs font-medium transition-colors ${
+                !lifetime ? "bg-white/10 text-white" : "text-white/50 hover:text-white/80"
+              }`}
+            >
+              {t("admin.users.ramSub")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLifetime(true)}
+              className={`h-9 px-3 text-xs font-medium transition-colors ${
+                lifetime ? "bg-white/10 text-white" : "text-white/50 hover:text-white/80"
+              }`}
+            >
+              {t("admin.users.ramLifetime")}
+            </button>
+          </div>
+          {!lifetime && (
+            <input
+              type="date"
+              value={expiry}
+              onChange={(e) => setExpiry(e.target.value)}
+              className="h-9 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-white/30 [color-scheme:dark]"
+            />
+          )}
+          <button
+            type="button"
+            onClick={saveRam}
+            disabled={ramBusy || (!lifetime && !expiry)}
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm transition-colors hover:border-white/20 disabled:opacity-40"
+          >
+            {ramBusy ? t("admin.servers.saving") : t("admin.users.ramSave")}
+          </button>
+        </div>
+        <p className="text-[11px] text-white/35">
+          {t("admin.users.ramHint")}
+          {savedMb > 0 && (
+            <>
+              {" · "}
+              {savedMb / 1024} GB{" "}
+              {user.bonus_ram_expires_at
+                ? `(${t("admin.users.ramUntil")} ${new Date(
+                    user.bonus_ram_expires_at,
+                  ).toLocaleDateString(locale)})`
+                : `(${t("admin.users.ramLifetime")})`}
+            </>
+          )}
+        </p>
+      </div>
     </div>
   );
 }

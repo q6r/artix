@@ -100,6 +100,8 @@ pub async fn ensure_indexes(db: &Database) -> mongodb::error::Result<()> {
     unique_sparse(db, "servers", doc! { "vmid": 1 }).await?;
     // Prevents two VPS from sharing a relay host+port (cross-tenant SSH).
     unique_sparse(db, "servers", doc! { "ssh_host": 1, "ssh_port": 1 }).await?;
+    // Minecraft public ports are globally unique (one Docker VM publishes them).
+    unique_sparse(db, "servers", doc! { "container.mc_port": 1 }).await?;
     index(db, "servers", doc! { "user_id": 1 }).await?;
 
     unique(db, "api_keys", doc! { "key_hash": 1 }).await?;
@@ -126,6 +128,7 @@ pub async fn ensure_indexes(db: &Database) -> mongodb::error::Result<()> {
     index(db, "server_grants", doc! { "org_id": 1 }).await?;
     index(db, "server_grants", doc! { "user_id": 1 }).await?;
     index(db, "servers", doc! { "org_id": 1 }).await?;
+    index(db, "deploys", doc! { "server_id": 1, "created_at": -1 }).await?;
 
     index(db, "backup_codes", doc! { "user_id": 1 }).await?;
 
@@ -139,6 +142,8 @@ pub async fn ensure_indexes(db: &Database) -> mongodb::error::Result<()> {
     index(db, "tickets", doc! { "user_id": 1, "updated_at": -1 }).await?;
     index(db, "tickets", doc! { "status": 1, "updated_at": -1 }).await?;
     index(db, "ticket_messages", doc! { "ticket_id": 1, "created_at": 1 }).await?;
+
+    index(db, "chat_messages", doc! { "channel": 1, "created_at": -1 }).await?;
 
     Ok(())
 }
@@ -170,6 +175,8 @@ pub trait Collections {
     fn dedicated_ips(&self) -> mongodb::Collection<DedicatedIp>;
     fn notifications(&self) -> mongodb::Collection<Notification>;
     fn upgrades(&self) -> mongodb::Collection<Upgrade>;
+    fn deploys(&self) -> mongodb::Collection<Deploy>;
+    fn chat_messages(&self) -> mongodb::Collection<ChatMessage>;
 }
 
 impl Collections for Database {
@@ -247,5 +254,11 @@ impl Collections for Database {
     }
     fn upgrades(&self) -> mongodb::Collection<Upgrade> {
         self.collection("upgrades")
+    }
+    fn deploys(&self) -> mongodb::Collection<Deploy> {
+        self.collection("deploys")
+    }
+    fn chat_messages(&self) -> mongodb::Collection<ChatMessage> {
+        self.collection("chat_messages")
     }
 }

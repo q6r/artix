@@ -43,6 +43,41 @@ pub mod perm {
     pub const ANNOUNCEMENTS_MANAGE: &str = "announcements.manage";
 }
 
+/// Capability scopes for user-facing API keys. Unlike RBAC `perm`s (which gate
+/// admin actions), these gate what a personal API key may do with the OWNER's
+/// own resources. A session (the user in the browser) always has all of them.
+pub mod cap {
+    pub const SERVICES_READ: &str = "services.read"; // list/get VPS & containers
+    pub const SERVICES_CREATE: &str = "services.create"; // create/deploy/config
+    pub const SERVICES_RESTART: &str = "services.restart"; // start/stop/restart
+    pub const SERVICES_DELETE: &str = "services.delete";
+    pub const METRICS_READ: &str = "metrics.read"; // cpu/mem stats + status
+    pub const LOGS_READ: &str = "logs.read"; // container/app logs
+    pub const CONSOLE: &str = "console"; // interactive console (VPS)
+    pub const HISTORY_READ: &str = "history.read"; // deploy/action history
+    pub const EVENTS: &str = "events"; // realtime event stream (SSE)
+    pub const BILLING: &str = "billing"; // invoices/subscriptions
+    pub const ADMIN: &str = "admin"; // admin endpoints (also needs RBAC)
+
+    pub const ALL: &[&str] = &[
+        SERVICES_READ,
+        SERVICES_CREATE,
+        SERVICES_RESTART,
+        SERVICES_DELETE,
+        METRICS_READ,
+        LOGS_READ,
+        CONSOLE,
+        HISTORY_READ,
+        EVENTS,
+        BILLING,
+        ADMIN,
+    ];
+
+    pub fn is_valid(s: &str) -> bool {
+        s == "*" || ALL.contains(&s)
+    }
+}
+
 /// Per-server permissions granted to org members on individual servers. These
 /// are NOT global RBAC permissions — they live in `server_grants` documents and
 /// gate access to a specific shared VPS.

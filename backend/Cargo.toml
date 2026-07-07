@@ -50,6 +50,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "rustls-tls",
     "multipart",
+    "stream",
 ] }
 
 # Errors / logging / config

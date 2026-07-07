@@ -97,6 +97,33 @@ pub async fn unlink(
         .await?;
     // Drop the stored GitHub token so a stale credential isn't retained.
     if provider.as_str() == "github" {
+        // First (while the token is still valid) delete every auto-deploy webhook
+        // this user registered, and clear the containers' auto-deploy fields.
+        if let Ok(token) = crate::handlers::account::github_token(&state, &auth) {
+            let mut targets: Vec<(ObjectId, String, i64)> = Vec::new();
+            if let Ok(mut cur) = state
+                .db
+                .servers()
+                .find(doc! { "type": 1, "user_id": auth.user_id })
+                .await
+            {
+                while cur.advance().await.unwrap_or(false) {
+                    if let Ok(s) = cur.deserialize_current() {
+                        if let (Some(sid), Some(c)) = (s.id, s.container.as_ref()) {
+                            if let (Some(hid), Some(repo)) =
+                                (c.github_hook_id, c.github_repo.clone())
+                            {
+                                targets.push((sid, repo, hid));
+                            }
+                        }
+                    }
+                }
+            }
+            for (sid, repo, hid) in targets {
+                crate::handlers::containers::disable_auto_deploy(&state, sid, Some((&repo, hid, &token)))
+                    .await;
+            }
+        }
         let _ = state
             .db
             .users()
@@ -333,6 +360,9 @@ async fn resolve_user(
         locked_until: None,
         github_access_token: None,
         github_username: None,
+        free_ram_claimed: false,
+        bonus_ram_mb: None,
+        bonus_ram_expires_at: None,
     };
     let inserted = state.db.users().insert_one(&user).await?;
     let uid = inserted

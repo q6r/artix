@@ -22,6 +22,20 @@ export type GithubRepo = {
   updated_at?: string | null;
 };
 
+/** A developer API key (secret shown only once, at creation). */
+export type ApiKey = {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked: boolean;
+};
+
+export type CreateKeyResponse = ApiKey & { key: string };
+
 export type Plan = {
   id: string;
   name: string;
@@ -56,10 +70,30 @@ export type CustomRates = {
   disk_max: number;
 };
 
+export type ContainerPlan = {
+  id: string; // "c-free" | "c-starter" | ...
+  name: string;
+  ram_mb: number;
+  price_cents: number; // 0 = free tier
+  currency: string;
+};
+
 export type PlansResponse = {
   plans: Plan[];
   custom: CustomRates;
   currency: string;
+  container_plans: ContainerPlan[];
+};
+
+/** The account's container RAM pool. */
+export type RamBalance = {
+  total_mb: number;
+  used_mb: number;
+  available_mb: number;
+  free_grant_mb: number;
+  free_claimed: boolean;
+  bot_min_mb: number;
+  site_min_mb: number;
 };
 
 export type SubscriptionStatus =
@@ -168,6 +202,53 @@ export type ContainerInfo = {
   status?: string | null; // "created" | "running" | "stopped" | "exited" | ...
   subdomain?: string | null;
   deployed: boolean;
+  /** Auto-redeploy on GitHub push is active (secret/hook id never exposed). */
+  auto_deploy?: boolean;
+  github_repo?: string | null;
+  github_ref?: string | null;
+  custom_domain?: string | null;
+  custom_domain_verified?: boolean;
+  // Minecraft (container_type === "minecraft")
+  edition?: string | null; // "java" | "bedrock"
+  software?: string | null; // VANILLA | PAPER | PURPUR | FABRIC | FORGE
+  mc_relay_host?: string | null;
+  mc_port?: number | null;
+  max_players?: number | null;
+  // Voice (container_type === "voice", Mumble)
+  admin_password?: string | null;
+  voice_password?: string | null;
+};
+
+/** A site container's custom-domain status. */
+export type DomainStatus = {
+  domain: string | null;
+  verified: boolean;
+  /** Relay IP the customer points their domain's A record at. */
+  target_ip: string | null;
+};
+
+/** A file/dir entry from the container file browser. */
+export type FileEntry = {
+  name: string;
+  type: "dir" | "file";
+  size: number;
+  heavy?: boolean; // node_modules/.git/… — not auto-expanded
+};
+
+export type FilesResult = { path: string; entries: FileEntry[] };
+export type FileContent = { path: string; content: string; size: number };
+
+/** One entry in a container's deploy history. */
+export type DeployItem = {
+  id: string;
+  user_name: string;
+  source: string; // "zip" | "github" | "auto"
+  repo?: string | null;
+  git_ref?: string | null;
+  commit?: string | null;
+  status: string; // "success" | "failed"
+  error?: string | null;
+  created_at: string; // ISO 8601
 };
 
 export type DeployResult = {
@@ -377,6 +458,10 @@ export type AdminUser = {
   status: UserStatus;
   role_ids: string[];
   created_at: string;
+  /** Admin-granted container RAM in MB (0 when none). */
+  bonus_ram_mb: number;
+  /** When the grant expires (ISO); null = lifetime. */
+  bonus_ram_expires_at: string | null;
 };
 
 export type TicketMessage = {
@@ -390,6 +475,24 @@ export type TicketMessage = {
 export type TicketThread = {
   ticket: Ticket;
   messages: TicketMessage[];
+};
+
+// ----------------------------- Community -----------------------------
+
+/** A participant currently connected to the community voice room. */
+export type VoiceParticipant = {
+  identity: string;
+  name: string;
+  muted: boolean;
+};
+
+/** A message in a community text channel. */
+export type ChatMessage = {
+  id: string;
+  name: string;
+  text: string;
+  user_id: string;
+  created_at: string;
 };
 
 /** Format integer cents into a localized money string. */

@@ -15,7 +15,7 @@ use crate::{
     db::Collections,
     error::{AppError, AppResult},
     models::{ApiKey, ApiKeyPublic},
-    permissions::{self, ALL_PERMISSIONS},
+    permissions::cap,
     state::AppState,
 };
 
@@ -36,20 +36,15 @@ pub struct CreateKeyResponse {
     pub meta: ApiKeyPublic,
 }
 
-fn validate_scopes(scopes: &[String], owner_perms: &[String]) -> AppResult<()> {
+fn validate_scopes(scopes: &[String]) -> AppResult<()> {
+    if scopes.is_empty() {
+        return Err(AppError::Validation(
+            "select at least one permission for the key".into(),
+        ));
+    }
     for s in scopes {
-        let known = s == "*"
-            || ALL_PERMISSIONS.contains(&s.as_str())
-            || (s.ends_with(".*")
-                && ALL_PERMISSIONS
-                    .iter()
-                    .any(|k| permissions::granted(std::slice::from_ref(s), k)));
-        if !known {
+        if !cap::is_valid(s) {
             return Err(AppError::Validation(format!("unknown permission: {s}")));
-        }
-        // A key can never grant more than its owner has.
-        if !permissions::granted(owner_perms, s) {
-            return Err(AppError::Forbidden);
         }
     }
     Ok(())
@@ -60,11 +55,12 @@ pub async fn create(
     auth: AuthUser,
     Json(req): Json<CreateKeyReq>,
 ) -> AppResult<Json<CreateKeyResponse>> {
+    auth.require_session()?; // an API key cannot mint more keys
     let name = req.name.trim().to_string();
     if name.is_empty() || name.len() > 60 {
         return Err(AppError::Validation("invalid key name".into()));
     }
-    validate_scopes(&req.scopes, &auth.permissions)?;
+    validate_scopes(&req.scopes)?;
 
     let secret = token::generate_url_token();
     let key = format!("ak_{secret}");
@@ -115,6 +111,7 @@ pub async fn revoke(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    auth.require_session()?;
     let oid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
     let res = state
         .db

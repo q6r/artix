@@ -46,6 +46,18 @@ pub struct User {
     pub github_access_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github_username: Option<String>,
+    /// Whether the account has claimed its one-time free container RAM grant.
+    #[serde(default)]
+    pub free_ram_claimed: bool,
+    /// Extra container RAM (MB) granted by an admin, added to the account pool
+    /// on top of the free grant and any purchased plans. `None`/0 = no grant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bonus_ram_mb: Option<i64>,
+    /// When the admin RAM grant expires. `None` = lifetime (permanent); a past
+    /// date means the grant no longer counts toward the pool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
+    pub bonus_ram_expires_at: Option<DateTime<Utc>>,
 }
 
 /// collection: `roles`
@@ -358,9 +370,55 @@ pub struct Container {
     /// Environment variables (JSON object stored as a BSON sub-document).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env: Option<bson::Document>,
+    /// Auto-redeploy: the GitHub repo/ref this container tracks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_repo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_ref: Option<String>,
+    /// Registered push-webhook id on the repo (for cleanup).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_hook_id: Option<i64>,
+    /// Per-container HMAC secret for the GitHub webhook, SEALED via secretbox.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<String>,
+    /// In-flight guard so overlapping pushes don't race two builds.
+    #[serde(default)]
+    pub deploying: bool,
     /// True once a bundle has been deployed at least once.
     #[serde(default)]
     pub deployed: bool,
+    /// Custom domain attached to a site, routed by Traefik alongside the
+    /// subdomain. `None` for bots / no custom domain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_domain: Option<String>,
+    /// Whether the custom domain's DNS was seen pointing at Artix.
+    #[serde(default)]
+    pub custom_domain_verified: bool,
+    // --- Minecraft (container_type == "minecraft") ---
+    /// "java" | "bedrock".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edition: Option<String>,
+    /// Server software for Java: VANILLA | PAPER | PURPUR | FABRIC | FORGE.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub software: Option<String>,
+    /// Relay public host forwarding the MC port (the address players connect to).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mc_relay_host: Option<String>,
+    /// Public port on the relay (== published port on the Docker VM). Globally
+    /// unique across containers (one Docker VM), enforced by a sparse index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mc_port: Option<i32>,
+    /// Max simultaneous players (server.properties max-players). Capped by RAM.
+    /// Reused as max users for voice (Mumble) containers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_players: Option<i32>,
+    /// Admin/SuperUser password for voice (Mumble) containers, shown to the owner
+    /// so they can administer the server from the Mumble client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admin_password: Option<String>,
+    /// Join password for a voice server (empty/None = open to anyone).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_password: Option<String>,
 }
 
 /// What the frontend sees for a container (no build_log/env in the projection).
@@ -375,6 +433,71 @@ pub struct ContainerPublic {
     pub status: Option<String>,
     pub subdomain: Option<String>,
     pub deployed: bool,
+    /// Auto-redeploy on GitHub push is active. Secret/hook id are never exposed.
+    pub auto_deploy: bool,
+    pub github_repo: Option<String>,
+    pub github_ref: Option<String>,
+    pub custom_domain: Option<String>,
+    pub custom_domain_verified: bool,
+    // Minecraft
+    pub edition: Option<String>,
+    pub software: Option<String>,
+    pub mc_relay_host: Option<String>,
+    pub mc_port: Option<i32>,
+    pub max_players: Option<i32>,
+    pub admin_password: Option<String>,
+    pub voice_password: Option<String>,
+}
+
+/// collection: `deploys` — immutable deploy-history log for a container.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Deploy {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub server_id: ObjectId,
+    pub user_id: ObjectId,
+    pub user_name: String,
+    pub source: String, // "zip" | "github" | "auto"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    pub status: String, // "success" | "failed"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeployPublic {
+    pub id: String,
+    pub user_name: String,
+    pub source: String,
+    pub repo: Option<String>,
+    pub git_ref: Option<String>,
+    pub commit: Option<String>,
+    pub status: String,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl Deploy {
+    pub fn public(&self) -> DeployPublic {
+        DeployPublic {
+            id: self.id.map(|o| o.to_hex()).unwrap_or_default(),
+            user_name: self.user_name.clone(),
+            source: self.source.clone(),
+            repo: self.repo.clone(),
+            git_ref: self.git_ref.clone(),
+            commit: self.commit.clone(),
+            status: self.status.clone(),
+            error: self.error.clone(),
+            created_at: self.created_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -434,11 +557,40 @@ impl Server {
                 status: c.status.clone(),
                 subdomain: c.subdomain.clone(),
                 deployed: c.deployed,
+                auto_deploy: c.github_hook_id.is_some() && c.github_repo.is_some(),
+                github_repo: c.github_repo.clone(),
+                github_ref: c.github_ref.clone(),
+                custom_domain: c.custom_domain.clone(),
+                custom_domain_verified: c.custom_domain_verified,
+                edition: c.edition.clone(),
+                software: c.software.clone(),
+                mc_relay_host: c.mc_relay_host.clone(),
+                mc_port: c.mc_port,
+                max_players: c.max_players,
+                admin_password: c.admin_password.clone(),
+                voice_password: c.voice_password.clone(),
             }),
             expires_at: self.expires_at,
             created_at: self.created_at,
         }
     }
+}
+
+// ----------------------------- Community chat -----------------------------
+
+/// collection: `chat_messages` — messages in the shared community chat channels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    /// Channel slug (allowlisted, e.g. "geral").
+    pub channel: String,
+    pub user_id: ObjectId,
+    /// Author display name captured at send time.
+    pub name: String,
+    pub text: String,
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    pub created_at: DateTime<Utc>,
 }
 
 // ----------------------------- Plans -----------------------------

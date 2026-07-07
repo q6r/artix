@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Lock, Server as ServerIcon, Boxes } from "lucide-react";
@@ -9,7 +9,13 @@ import Skeleton from "@/components/Skeleton";
 import { useLang } from "@/components/LanguageProvider";
 import { api, ApiError } from "@/lib/api/client";
 import { useQuery, mutate } from "@/lib/api/query";
-import { formatMoney, type Checkout, type PlansResponse, type Server } from "@/lib/api/types";
+import { CreateContainerForm, BuyRamPacks, RamUsage } from "@/components/containers/CreateContainer";
+import {
+  formatMoney,
+  type Checkout,
+  type PlansResponse,
+  type RamBalance,
+} from "@/lib/api/types";
 
 type Country = { id: string; name: string; ms: string; soon?: boolean };
 const COUNTRIES: Country[] = [
@@ -111,7 +117,7 @@ export default function CheckoutClient() {
   };
 
   if (hostType === null) return <HostTypeChooser onPick={setHostType} />;
-  if (hostType === "container") return <CreateBotForm onBack={() => setHostType(null)} />;
+  if (hostType === "container") return <ContainerFlow onBack={() => setHostType(null)} />;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -707,48 +713,22 @@ function HostTypeChooser({ onPick }: { onPick: (t: "vps" | "container") => void 
   );
 }
 
-// ----------------------------- Create free bot -----------------------------
+// ----------------------------- Container flow (RAM pool) -----------------------------
 
-function CreateBotForm({ onBack }: { onBack: () => void }) {
+function ContainerFlow({ onBack }: { onBack: () => void }) {
   const { t } = useLang();
   const router = useRouter();
-  const [ctype, setCtype] = useState<"discord_bot" | "site">("discord_bot");
-  const [name, setName] = useState("");
-  const [subdomain, setSubdomain] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    if (busy || !name.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const out = await api<Server>("containers", {
-        method: "POST",
-        json: {
-          name: name.trim(),
-          container_type: ctype,
-          plan: "free",
-          ...(ctype === "site" && subdomain.trim() ? { subdomain: subdomain.trim() } : {}),
-        },
-      });
-      void mutate("containers");
-      router.push(`/dashboard/containers/${out.id}`);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("cont.error"));
-      setBusy(false);
-    }
-  };
+  const { data: ram } = useQuery<RamBalance>("containers/ram", { refreshInterval: 6000 });
+  const { data: plansData } = useQuery<PlansResponse>("billing/plans");
+  const [view, setView] = useState<"create" | "buy">("create");
 
   const seg = (active: boolean) =>
-    `flex-1 rounded-xl border px-4 py-3 text-left transition-colors ${
-      active
-        ? "border-white/30 bg-white/[0.06]"
-        : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"
+    `flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+      active ? "bg-white text-black" : "text-white/60 hover:text-white"
     }`;
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <button
           onClick={onBack}
@@ -756,76 +736,29 @@ function CreateBotForm({ onBack }: { onBack: () => void }) {
         >
           <ArrowLeft className="h-4 w-4" /> {t("cont.back")}
         </button>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{t("cont.create.title")}</h1>
-        <p className="mt-1 text-sm text-white/55">{t("cont.create.desc")}</p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">{t("cont.host.container")}</h1>
+        <p className="mt-1 text-sm text-white/55">{t("cont.plan.subtitle")}</p>
       </div>
 
-      <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-        <div>
-          <span className="mb-2 block text-sm font-medium text-white/70">{t("cont.type.q")}</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setCtype("discord_bot")}
-              className={seg(ctype === "discord_bot")}
-            >
-              <span className="text-sm font-medium">{t("cont.type.bot")}</span>
-              <span className="mt-0.5 block text-xs text-white/45">{t("cont.type.botDesc")}</span>
-            </button>
-            <button type="button" onClick={() => setCtype("site")} className={seg(ctype === "site")}>
-              <span className="text-sm font-medium">{t("cont.type.site")}</span>
-              <span className="mt-0.5 block text-xs text-white/45">{t("cont.type.siteDesc")}</span>
-            </button>
-          </div>
-        </div>
+      <RamUsage ram={ram} onBuy={() => setView("buy")} />
 
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-white/70">{t("cont.name")}</span>
-          <input
-            value={name}
-            autoFocus
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder={t("cont.namePlaceholder")}
-            className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm outline-none focus:border-white/30"
-          />
-        </label>
-
-        {ctype === "site" && (
-          <label className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-white/70">{t("cont.subdomain")}</span>
-            <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 focus-within:border-white/30">
-              <input
-                value={subdomain}
-                onChange={(e) =>
-                  setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
-                }
-                placeholder={t("cont.subdomainPlaceholder")}
-                className="h-11 flex-1 bg-transparent text-sm outline-none"
-              />
-              <span className="shrink-0 text-sm text-white/40">.apps.artix.cloud</span>
-            </div>
-            <span className="text-xs text-white/40">{t("cont.subdomainHint")}</span>
-          </label>
-        )}
-
-        {error && <p className="text-sm text-red-300">{error}</p>}
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            onClick={onBack}
-            className="inline-flex h-10 items-center rounded-xl border border-white/10 px-4 text-sm text-white/70 transition-colors hover:bg-white/5"
-          >
-            {t("cont.cancel")}
-          </button>
-          <button
-            onClick={submit}
-            disabled={busy || !name.trim()}
-            className="inline-flex h-10 items-center rounded-xl bg-white px-5 text-sm font-medium text-black transition-colors hover:bg-white/85 disabled:opacity-50"
-          >
-            {busy ? t("cont.creating") : t("cont.create")}
-          </button>
-        </div>
+      <div className="inline-flex w-full rounded-xl border border-white/10 bg-white/[0.03] p-1">
+        <button onClick={() => setView("create")} className={seg(view === "create")}>
+          {t("cont.create")}
+        </button>
+        <button onClick={() => setView("buy")} className={seg(view === "buy")}>
+          {t("cont.ram.buy")}
+        </button>
       </div>
+
+      {view === "create" ? (
+        <CreateContainerForm
+          onCreated={(id) => router.push(`/dashboard/containers/${id}`)}
+          onBuyRam={() => setView("buy")}
+        />
+      ) : (
+        <BuyRamPacks plans={plansData?.container_plans} />
+      )}
     </div>
   );
 }

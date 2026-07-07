@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Search } from "lucide-react";
 
 export type Option = { value: string; label: string };
 
@@ -13,28 +13,53 @@ export default function Select({
   options,
   className = "",
   placeholder = "Selecionar",
+  searchable,
+  searchPlaceholder = "Buscar…",
+  emptyLabel = "Nada encontrado",
 }: {
   value: string;
   onChange: (value: string) => void;
   options: Option[];
   className?: string;
   placeholder?: string;
+  /** Show a filter box inside the dropdown. Defaults to on when there are many options. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [query, setQuery] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setMounted(true), []);
 
   const current = options.find((o) => o.value === value);
+  const showSearch = searchable ?? options.length > 7;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
 
   const toggle = () => {
     if (triggerRef.current)
       setRect(triggerRef.current.getBoundingClientRect());
     setOpen((o) => !o);
   };
+
+  // Reset the filter each time the menu opens, and focus the search box.
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      const id = window.setTimeout(() => searchRef.current?.focus(), 20);
+      return () => window.clearTimeout(id);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -62,6 +87,11 @@ export default function Select({
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  const pick = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
 
   return (
     <>
@@ -100,29 +130,50 @@ export default function Select({
                   width: rect.width,
                   zIndex: 200,
                 }}
-                className="max-h-64 overflow-auto rounded-xl border border-white/10 bg-[#0e0e0e] p-1 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)]"
+                className="flex max-h-72 flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0e0e0e] shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)]"
               >
-                {options.map((o) => {
-                  const selected = o.value === value;
-                  return (
-                    <button
-                      key={o.value}
-                      type="button"
-                      onClick={() => {
-                        onChange(o.value);
-                        setOpen(false);
+                {showSearch && (
+                  <div className="relative border-b border-white/10 p-1.5">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                    <input
+                      ref={searchRef}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && filtered.length > 0) {
+                          e.preventDefault();
+                          pick(filtered[0].value);
+                        }
                       }}
-                      className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                        selected
-                          ? "bg-white/10 text-white"
-                          : "text-white/70 hover:bg-white/5 hover:text-white"
-                      }`}
-                    >
-                      <span className="truncate">{o.label}</span>
-                      {selected && <Check className="h-4 w-4 shrink-0" />}
-                    </button>
-                  );
-                })}
+                      placeholder={searchPlaceholder}
+                      className="h-9 w-full rounded-lg bg-white/[0.04] pl-9 pr-3 text-sm text-white outline-none placeholder:text-white/35 focus:bg-white/[0.06]"
+                    />
+                  </div>
+                )}
+                <div className="overflow-auto p-1">
+                  {filtered.length === 0 ? (
+                    <p className="px-3 py-3 text-center text-sm text-white/40">{emptyLabel}</p>
+                  ) : (
+                    filtered.map((o) => {
+                      const selected = o.value === value;
+                      return (
+                        <button
+                          key={o.value}
+                          type="button"
+                          onClick={() => pick(o.value)}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                            selected
+                              ? "bg-white/10 text-white"
+                              : "text-white/70 hover:bg-white/5 hover:text-white"
+                          }`}
+                        >
+                          <span className="truncate">{o.label}</span>
+                          {selected && <Check className="h-4 w-4 shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>,

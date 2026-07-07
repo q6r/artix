@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { Menu, X } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
 
 type NavLink = { label: string; href: string };
 
@@ -11,12 +12,15 @@ export default function SiteHeaderMobile({
   links,
   loginLabel,
   registerLabel,
+  dashboardLabel,
 }: {
   links: NavLink[];
   loginLabel: string;
   registerLabel: string;
+  dashboardLabel: string;
 }) {
   const [open, setOpen] = useState(false);
+  const { user } = useAuth();
 
   return (
     <div className="md:hidden">
@@ -72,20 +76,32 @@ export default function SiteHeaderMobile({
                 ))}
               </nav>
               <div className="mt-2 flex flex-col gap-2 border-t border-white/10 pt-3">
-                <Link
-                  href="/login"
-                  onClick={() => setOpen(false)}
-                  className="rounded-xl border border-white/10 bg-white/5 py-2.5 text-center text-sm font-medium transition-colors hover:bg-white/10"
-                >
-                  {loginLabel}
-                </Link>
-                <Link
-                  href="/register"
-                  onClick={() => setOpen(false)}
-                  className="rounded-xl bg-white py-2.5 text-center text-sm font-medium text-black transition-colors hover:bg-white/85"
-                >
-                  {registerLabel}
-                </Link>
+                {user ? (
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setOpen(false)}
+                    className="rounded-xl bg-white py-2.5 text-center text-sm font-medium text-black transition-colors hover:bg-white/85"
+                  >
+                    {dashboardLabel}
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      href="/login"
+                      onClick={() => setOpen(false)}
+                      className="rounded-xl border border-white/10 bg-white/5 py-2.5 text-center text-sm font-medium transition-colors hover:bg-white/10"
+                    >
+                      {loginLabel}
+                    </Link>
+                    <Link
+                      href="/register"
+                      onClick={() => setOpen(false)}
+                      className="rounded-xl bg-white py-2.5 text-center text-sm font-medium text-black transition-colors hover:bg-white/85"
+                    >
+                      {registerLabel}
+                    </Link>
+                  </>
+                )}
               </div>
             </motion.div>
           </motion.div>
