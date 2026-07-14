@@ -11,6 +11,10 @@ const { execFile } = require("child_process");
 const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
+const http = require("http");
+const https = require("https");
+const dns = require("dns");
+const net = require("net");
 
 const TOKEN = process.env.AGENT_TOKEN || "";
 const PORT = parseInt(process.env.AGENT_PORT || "9090", 10);
@@ -185,6 +189,134 @@ async function maybeFlatten(dir) {
   await fsp.rm(sole, { recursive: true, force: true });
 }
 
+// ---- SSRF-safe URL download (for "restore from link") -----------------------
+// The agent fetches an arbitrary user-supplied URL, so it MUST refuse to connect
+// to internal ranges: loopback, private, CGNAT (Tailscale 100.64/10 = our own
+// admin net!), link-local + cloud metadata (169.254.169.254), and IPv6 ULA/LL.
+const MAX_RESTORE_BYTES = 6 * 1024 * 1024 * 1024; // 6 GB hard cap
+const RESTORE_TMP = "/var/tmp"; // disk-backed (not tmpfs) for multi-GB archives
+
+function ipv4ToInt(ip) {
+  const p = ip.split(".").map((x) => Number(x));
+  if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  return ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3];
+}
+function blockedV4(ip) {
+  const n = ipv4ToInt(ip);
+  if (n === null) return true; // unparseable -> block
+  const inR = (base, bits) => {
+    const b = ipv4ToInt(base);
+    const shift = 32 - bits;
+    return (n >>> shift) === (b >>> shift);
+  };
+  return (
+    inR("0.0.0.0", 8) || inR("10.0.0.0", 8) || inR("100.64.0.0", 10) ||
+    inR("127.0.0.0", 8) || inR("169.254.0.0", 16) || inR("172.16.0.0", 12) ||
+    inR("192.0.0.0", 24) || inR("192.168.0.0", 16) || inR("198.18.0.0", 15) ||
+    inR("224.0.0.0", 4) || inR("240.0.0.0", 4)
+  );
+}
+function blockedIp(ip) {
+  const v = net.isIP(ip);
+  if (v === 4) return blockedV4(ip);
+  if (v === 6) {
+    const low = String(ip).toLowerCase();
+    if (low === "::1" || low === "::") return true;
+    const m = low.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (m) return blockedV4(m[1]);
+    if (/^f[cd]/.test(low)) return true;   // fc00::/7 ULA
+    if (/^fe[89ab]/.test(low)) return true; // fe80::/10 link-local
+    if (/^ff/.test(low)) return true;       // ff00::/8 multicast
+    return false;
+  }
+  return true; // not an IP -> block
+}
+// Custom DNS lookup that fails the connection if the host resolves to any
+// blocked address (validated at connect time -> also stops DNS rebinding).
+function guardedLookup(hostname, options, cb) {
+  if (typeof options === "function") { cb = options; options = {}; }
+  const opts = options && typeof options === "object" ? options : {};
+  dns.lookup(hostname, { ...opts, all: true }, (err, addresses) => {
+    if (err) return cb(err);
+    for (const a of addresses) {
+      if (blockedIp(a.address)) return cb(new Error("blocked address (internal/private host)"));
+    }
+    if (opts.all) return cb(null, addresses);
+    return cb(null, addresses[0].address, addresses[0].family);
+  });
+}
+function openUrl(urlStr) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(urlStr); } catch { return reject(new Error("invalid url")); }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return reject(new Error("only http/https links"));
+    const lib = u.protocol === "https:" ? https : http;
+    const req = lib.request(
+      urlStr,
+      { method: "GET", lookup: guardedLookup, timeout: 30000, headers: { "user-agent": "artix-agent" } },
+      (res) => resolve({ res, req })
+    );
+    req.on("error", reject);
+    req.on("timeout", () => req.destroy(new Error("connect timeout")));
+    req.end();
+  });
+}
+// Download `startUrl` to `dest`, following redirects (each SSRF-revalidated),
+// capped at maxBytes and timeoutMs. Rejects (and removes the partial file) on
+// oversize / timeout / non-200.
+async function downloadToFile(startUrl, dest, { maxBytes, timeoutMs }) {
+  let url = startUrl;
+  for (let hop = 0; hop < 6; hop++) {
+    const { res, req } = await openUrl(url);
+    const status = res.statusCode;
+    if (status >= 300 && status < 400 && res.headers.location) {
+      res.resume();
+      try { req.destroy(); } catch {}
+      url = new URL(res.headers.location, url).toString();
+      continue;
+    }
+    if (status !== 200) {
+      res.resume();
+      try { req.destroy(); } catch {}
+      throw new Error("HTTP " + status);
+    }
+    const cl = parseInt(res.headers["content-length"] || "", 10);
+    if (Number.isFinite(cl) && cl > maxBytes) {
+      res.resume();
+      try { req.destroy(); } catch {}
+      throw new Error("file too large (" + cl + " bytes)");
+    }
+    await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(dest);
+      let received = 0;
+      let settled = false;
+      const done = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(to);
+        if (err) {
+          try { req.destroy(); } catch {}
+          try { out.destroy(); } catch {}
+          fsp.rm(dest, { force: true }).catch(() => {});
+          reject(err);
+        } else resolve();
+      };
+      const to = setTimeout(() => done(new Error("download timeout")), timeoutMs);
+      res.on("data", (chunk) => {
+        received += chunk.length;
+        if (received > maxBytes) return done(new Error("file exceeds size limit"));
+        if (!out.write(chunk)) { res.pause(); out.once("drain", () => res.resume()); }
+      });
+      res.on("end", () => out.end());
+      res.on("error", (e) => done(e));
+      out.on("error", (e) => done(e));
+      out.on("finish", () => done());
+    });
+    return;
+  }
+  throw new Error("too many redirects");
+}
+
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
@@ -229,6 +361,66 @@ app.post("/apps/:id/deploy", upload.single("bundle"), async (req, res) => {
   }
 });
 
+/**
+ * ZIP (especially one made on Windows) carries no Unix mode bits, and adm-zip's
+ * extractor writes everything 0644 — so `node_modules/.bin/tsc` lands without
+ * +x and the build dies with `sh: 1: tsc: Permission denied`. Restore +x on
+ * every entry inside a `.bin` directory.
+ */
+async function fixBinExecBits(root) {
+  const stack = [root];
+  while (stack.length) {
+    const d = stack.pop();
+    let entries;
+    try {
+      entries = await fsp.readdir(d, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const p = path.join(d, e.name);
+      if (e.name === ".bin") {
+        for (const f of await fsp.readdir(p).catch(() => [])) {
+          await fsp.chmod(path.join(p, f), 0o755).catch(() => {});
+        }
+      } else {
+        stack.push(p);
+      }
+    }
+  }
+}
+
+/**
+ * Drop any node_modules shipped inside the bundle. It's a build artifact: the
+ * ZIP strips its exec bits and a Windows-built tree also carries wrong-platform
+ * native binaries. Only safe when the build reinstalls deps itself.
+ */
+async function stripNodeModules(root) {
+  const stack = [root];
+  let removed = 0;
+  while (stack.length) {
+    const d = stack.pop();
+    let entries;
+    try {
+      entries = await fsp.readdir(d, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const p = path.join(d, e.name);
+      if (e.name === "node_modules") {
+        await fsp.rm(p, { recursive: true, force: true }).catch(() => {});
+        removed++;
+      } else {
+        stack.push(p);
+      }
+    }
+  }
+  return removed;
+}
+
 async function handleDeploy(id, req, res) {
   const dir = path.join(APPS_DIR, id);
   try {
@@ -254,6 +446,16 @@ async function handleDeploy(id, req, res) {
   const a = parseArtix(artixText);
   const vErr = validateArtix(a);
   if (vErr) return res.status(400).json({ error: vErr });
+
+  // A bundle that ships node_modules is the #1 cause of broken builds: the ZIP
+  // loses the +x bit (→ `sh: 1: tsc: Permission denied`) and a Windows-built
+  // tree carries wrong-platform native binaries. If the build installs deps
+  // itself, wipe the shipped tree so it installs natively; if it doesn't, at
+  // least restore the exec bits so the .bin shims can run.
+  const installsDeps = /\b(npm|pnpm|yarn|bun)\b[^&|;]*\b(install|ci|add)\b/i.test(a.BUILD || "");
+  if (installsDeps) await stripNodeModules(dir);
+  else await fixBinExecBits(dir);
+
   const type = (a.TYPE || "").toLowerCase();
   const runtime = (a.RUNTIME || "node").toLowerCase();
   const image = RUNTIMES[runtime](a.VERSION);
@@ -388,7 +590,17 @@ app.post("/apps/:id/action", async (req, res) => {
   const action = req.body.action;
   if (!["start", "stop", "restart"].includes(action)) return res.status(400).json({ error: "bad action" });
   const r = await docker([action, cname(id)]);
-  if (r.code !== 0) return res.status(400).json({ error: r.stderr.trim() || "failed" });
+  if (r.code !== 0) {
+    const err = r.stderr.trim() || "failed";
+    // The container only comes into existence on a successful deploy. Say that,
+    // instead of leaking Docker's raw "No such container: artix-<id>".
+    if (/no such container/i.test(err)) {
+      return res.status(409).json({
+        error: "Este container ainda não foi criado — envie um deploy do seu código primeiro (ou refaça o deploy, se o último falhou).",
+      });
+    }
+    return res.status(400).json({ error: err });
+  }
   res.json({ ok: true });
 });
 
@@ -639,6 +851,53 @@ app.post("/apps/:id/world", upload.single("file"), async (req, res) => {
   await cleanup();
   await docker(["start", cname(id)]);
   if (r.code !== 0) return res.status(500).json({ error: "extract failed", detail: (r.stderr || "").slice(0, 300) });
+  res.json({ ok: true });
+});
+
+// Restore from a URL: the agent downloads the archive server-side (bypasses the
+// panel's Cloudflare 100MB upload cap), then extracts it into /data like /world.
+// SSRF-guarded; body is synchronous (the backend calls this from a background
+// task, so a multi-GB download doesn't block the user's request).
+app.post("/apps/:id/world-url", async (req, res) => {
+  const id = cleanId(req.params.id);
+  if (!id) return res.status(400).json({ error: "bad id" });
+  const url = String((req.body && req.body.url) || "").trim();
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: "use an http(s) link" });
+  const data = mcDataDir(id);
+  if (!fs.existsSync(data)) return res.status(404).json({ error: "no server data" });
+
+  await fsp.mkdir(RESTORE_TMP, { recursive: true }).catch(() => {});
+  const tmp = path.join(RESTORE_TMP, `worldurl-${id}-${Date.now()}`);
+  try {
+    await downloadToFile(url, tmp, { maxBytes: MAX_RESTORE_BYTES, timeoutMs: 25 * 60 * 1000 });
+  } catch (e) {
+    await fsp.rm(tmp, { force: true }).catch(() => {});
+    return res.status(400).json({ error: "download failed: " + String(e.message || "error").slice(0, 200) });
+  }
+
+  // Trust magic bytes, not the URL extension: PK.. = zip, 1f 8b = gzip (tar.gz).
+  let kind = null;
+  try {
+    const fd = fs.openSync(tmp, "r");
+    const b = Buffer.alloc(4);
+    fs.readSync(fd, b, 0, 4, 0);
+    fs.closeSync(fd);
+    if (b[0] === 0x50 && b[1] === 0x4b) kind = "zip";
+    else if (b[0] === 0x1f && b[1] === 0x8b) kind = "tgz";
+  } catch {}
+  if (!kind) {
+    await fsp.rm(tmp, { force: true }).catch(() => {});
+    return res.status(400).json({ error: "not a .zip or .tar.gz archive" });
+  }
+
+  await docker(["stop", cname(id)]);
+  const r =
+    kind === "zip"
+      ? await exec("unzip", ["-o", tmp, "-d", data])
+      : await exec("tar", ["-xzf", tmp, "-C", data]);
+  await fsp.rm(tmp, { force: true }).catch(() => {});
+  await docker(["start", cname(id)]);
+  if (r.code !== 0) return res.status(500).json({ error: "extract failed: " + (r.stderr || "").slice(0, 300) });
   res.json({ ok: true });
 });
 

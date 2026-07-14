@@ -33,6 +33,7 @@ import {
   Clock,
   Image as ImageIcon,
   Download,
+  Ban,
 } from "lucide-react";
 import GithubIcon from "@/components/icons/GithubIcon";
 import Select from "@/components/Select";
@@ -140,10 +141,19 @@ export default function ContainerDetailClient({ id }: { id: string }) {
         </div>
       </FadeIn>
 
-      {isMc && c.state === "provisioning" && <McInstallBanner />}
-      {isMc && c.state === "error" && <McErrorBanner />}
-      {isVoice && c.state === "provisioning" && <VoiceInstallBanner />}
-      {isVoice && c.state === "error" && <McErrorBanner />}
+      {c.container?.suspended && (
+        <FadeIn className="flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/[0.06] p-4">
+          <Ban className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
+          <div>
+            <p className="text-sm font-semibold text-red-200">{t("cont.suspended.title")}</p>
+            <p className="mt-0.5 text-sm text-red-200/70">{t("cont.suspended.msg")}</p>
+          </div>
+        </FadeIn>
+      )}
+      {isMc && !c.container?.suspended && c.state === "provisioning" && <McInstallBanner />}
+      {isMc && !c.container?.suspended && c.state === "error" && <McErrorBanner />}
+      {isVoice && !c.container?.suspended && c.state === "provisioning" && <VoiceInstallBanner />}
+      {isVoice && !c.container?.suspended && c.state === "error" && <McErrorBanner />}
 
       <FadeIn delay={0.04} className="flex gap-1 overflow-x-auto border-b border-white/10">
         {tabs.map((tb) => (
@@ -171,7 +181,7 @@ export default function ContainerDetailClient({ id }: { id: string }) {
       {tab === "console" && <McConsoleTab id={id} />}
       {tab === "players" && <McPlayersTab id={id} c={c} />}
       {tab === "plugins" && addonDir && <McPluginsTab id={id} dir={addonDir} />}
-      {tab === "backups" && <McBackupsTab id={id} />}
+      {tab === "backups" && <McBackupsTab id={id} c={c} />}
       {tab === "settings" && isMc && <McSettingsTab id={id} c={c} />}
       {tab === "settings" && isVoice && <VoiceSettingsTab id={id} c={c} />}
     </div>
@@ -186,6 +196,7 @@ function Overview({ id, c }: { id: string; c: Server }) {
   const confirm = useConfirm();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const suspended = c.container?.suspended ?? false;
   const { data: stats } = useQuery<ContainerStats>(`containers/${id}/stats`, {
     refreshInterval: 4000,
   });
@@ -247,18 +258,19 @@ function Overview({ id, c }: { id: string; c: Server }) {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => act("start")} disabled={busy} className={btn}>
+        <button onClick={() => act("start")} disabled={busy || suspended} className={btn}>
           <Play className="h-4 w-4" /> {t("cont.action.start")}
         </button>
-        <button onClick={() => act("stop")} disabled={busy} className={btn}>
+        <button onClick={() => act("stop")} disabled={busy || suspended} className={btn}>
           <Square className="h-4 w-4" /> {t("cont.action.stop")}
         </button>
-        <button onClick={() => act("restart")} disabled={busy} className={btn}>
+        <button onClick={() => act("restart")} disabled={busy || suspended} className={btn}>
           <RotateCw className="h-4 w-4" /> {t("cont.action.restart")}
         </button>
         <button
           onClick={del}
-          className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-red-500/30 px-4 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10"
+          disabled={suspended}
+          className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-red-500/30 px-4 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Trash2 className="h-4 w-4" /> {t("cont.action.delete")}
         </button>
@@ -461,6 +473,7 @@ function VoiceOverview({ id, c }: { id: string; c: Server }) {
   const confirm = useConfirm();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const suspended = c.container?.suspended ?? false;
   const v = c.container;
   const host = v?.mc_relay_host ?? null;
   const port = v?.mc_port ?? null;
@@ -504,18 +517,19 @@ function VoiceOverview({ id, c }: { id: string; c: Server }) {
   return (
     <FadeIn className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => act("start")} disabled={busy} className={btn}>
+        <button onClick={() => act("start")} disabled={busy || suspended} className={btn}>
           <Play className="h-4 w-4" /> {t("cont.action.start")}
         </button>
-        <button onClick={() => act("stop")} disabled={busy} className={btn}>
+        <button onClick={() => act("stop")} disabled={busy || suspended} className={btn}>
           <Square className="h-4 w-4" /> {t("cont.action.stop")}
         </button>
-        <button onClick={() => act("restart")} disabled={busy} className={btn}>
+        <button onClick={() => act("restart")} disabled={busy || suspended} className={btn}>
           <RotateCw className="h-4 w-4" /> {t("cont.action.restart")}
         </button>
         <button
           onClick={del}
-          className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-red-500/30 px-4 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10"
+          disabled={suspended}
+          className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-red-500/30 px-4 text-sm font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Trash2 className="h-4 w-4" /> {t("cont.action.delete")}
         </button>
@@ -1636,14 +1650,44 @@ function fmtBytes(n: number): string {
 }
 
 /** Create/list/restore/delete/download world snapshots + import a world archive. */
-function McBackupsTab({ id }: { id: string }) {
+function McBackupsTab({ id, c }: { id: string; c: Server }) {
   const { t } = useLang();
   const toast = useToast();
   const confirm = useConfirm();
   const { data, loading } = useQuery<{ backups: McBackup[] }>(`containers/${id}/backups`);
   const [busy, setBusy] = useState(false);
+  const [urlValue, setUrlValue] = useState("");
+  const [urlBusy, setUrlBusy] = useState(false);
   const worldRef = useRef<HTMLInputElement | null>(null);
   const backups = data?.backups ?? [];
+
+  // Restore from a direct download link: the server fetches it itself, so it
+  // sidesteps the browser/Cloudflare ~100MB upload cap (works for multi-GB
+  // backups). Runs in the background — the server shows "provisioning".
+  const restoreFromUrl = async () => {
+    const url = urlValue.trim();
+    if (!url || urlBusy) return;
+    if (
+      !(await confirm({
+        title: t("cont.mc.backups.urlTitle"),
+        message: t("cont.mc.backups.urlMsg"),
+        confirmLabel: t("cont.mc.backups.urlBtn"),
+        danger: true,
+      }))
+    )
+      return;
+    setUrlBusy(true);
+    try {
+      await api(`containers/${id}/world-url`, { method: "POST", json: { url } });
+      setUrlValue("");
+      await mutate(`containers/${id}`);
+      toast(t("cont.mc.backups.urlStarted"), "success");
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : t("cont.error"));
+    } finally {
+      setUrlBusy(false);
+    }
+  };
 
   const create = async () => {
     setBusy(true);
@@ -1740,6 +1784,34 @@ function McBackupsTab({ id }: { id: string }) {
         </button>
       </div>
       <p className="text-xs text-white/40">{t("cont.mc.backups.desc")}</p>
+
+      {/* Restore from a direct download link — no browser/Cloudflare size cap. */}
+      <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+        <p className="text-sm font-medium">{t("cont.mc.backups.fromUrl")}</p>
+        <p className="text-xs text-white/45">{t("cont.mc.backups.fromUrlDesc")}</p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            value={urlValue}
+            onChange={(e) => setUrlValue(e.target.value)}
+            placeholder={t("cont.mc.backups.urlPlaceholder")}
+            className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm outline-none placeholder:text-white/30 focus:border-white/25"
+          />
+          <button
+            onClick={restoreFromUrl}
+            disabled={urlBusy || !urlValue.trim()}
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+          >
+            {urlBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {t("cont.mc.backups.urlBtn")}
+          </button>
+        </div>
+        {c.state === "provisioning" ? (
+          <p className="inline-flex items-center gap-2 text-xs text-amber-200/80">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {t("cont.mc.backups.restoreRunning")}
+          </p>
+        ) : null}
+      </div>
 
       {loading && !data ? (
         <Skeleton className="h-24 rounded-2xl" />

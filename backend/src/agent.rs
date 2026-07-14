@@ -406,6 +406,22 @@ impl AgentClient {
         self.ok(res).await
     }
 
+    /// Restore a world/data archive from a URL — the agent downloads it
+    /// server-side (bypassing the panel's Cloudflare upload cap) and extracts it
+    /// into `/data`. Very long timeout: multi-GB internet downloads take a while.
+    pub async fn import_world_url(&self, id: &str, url: &str) -> AppResult<()> {
+        let res = self
+            .http
+            .post(format!("{}/apps/{}/world-url", self.base, id))
+            .bearer_auth(&self.token)
+            .json(&serde_json::json!({ "url": url }))
+            .timeout(Duration::from_secs(30 * 60))
+            .send()
+            .await
+            .map_err(net)?;
+        self.ok(res).await
+    }
+
     /// Set the server icon (server-icon.png).
     pub async fn upload_icon(&self, id: &str, filename: &str, bytes: Vec<u8>) -> AppResult<()> {
         let part = reqwest::multipart::Part::bytes(bytes).file_name(filename.to_string());

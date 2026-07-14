@@ -419,6 +419,11 @@ pub struct Container {
     /// Join password for a voice server (empty/None = open to anyone).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice_password: Option<String>,
+    /// Admin-suspended: the container is frozen. The owner can't start, restart
+    /// or delete it until an admin lifts it. A dedicated flag (not `state`) so
+    /// the status reconciler can't silently clear it.
+    #[serde(default)]
+    pub suspended: bool,
 }
 
 /// What the frontend sees for a container (no build_log/env in the projection).
@@ -447,6 +452,7 @@ pub struct ContainerPublic {
     pub max_players: Option<i32>,
     pub admin_password: Option<String>,
     pub voice_password: Option<String>,
+    pub suspended: bool,
 }
 
 /// collection: `deploys` — immutable deploy-history log for a container.
@@ -525,8 +531,12 @@ pub struct ServerPublic {
     pub server_type: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<ContainerPublic>,
-    /// Expiry timestamp, or `null` for a lifetime VPS.
+    /// Admin-set hard expiry, or `null` when none (subscription-driven or lifetime).
     pub expires_at: Option<DateTime<Utc>>,
+    /// Next renewal date from the active subscription (subscription VPS have no
+    /// `expires_at`). When both this and `expires_at` are null → truly lifetime.
+    #[serde(default)]
+    pub renews_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -569,8 +579,10 @@ impl Server {
                 max_players: c.max_players,
                 admin_password: c.admin_password.clone(),
                 voice_password: c.voice_password.clone(),
+                suspended: c.suspended,
             }),
             expires_at: self.expires_at,
+            renews_at: None, // filled by handlers that can query the subscription
             created_at: self.created_at,
         }
     }

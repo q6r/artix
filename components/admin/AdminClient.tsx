@@ -866,6 +866,7 @@ function AdminContainerRow({ c }: { c: AdminServer }) {
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const ct = c.container;
+  const suspended = ct?.suspended ?? false;
 
   const remove = async () => {
     if (
@@ -881,6 +882,29 @@ function AdminContainerRow({ c }: { c: AdminServer }) {
       await api(`admin/servers/${c.id}`, { method: "DELETE" });
       await mutate("admin/servers");
     } catch {
+      setBusy(false);
+    }
+  };
+
+  const toggleSuspend = async () => {
+    if (
+      !(await confirm({
+        title: suspended ? t("admin.containers.unsuspendTitle") : t("admin.containers.suspendTitle"),
+        message: suspended ? t("admin.containers.unsuspendDesc") : t("admin.containers.suspendDesc"),
+        confirmLabel: suspended ? t("admin.containers.unsuspend") : t("admin.containers.suspend"),
+        danger: !suspended,
+      }))
+    )
+      return;
+    setBusy(true);
+    try {
+      await api(`admin/containers/${c.id}/${suspended ? "unsuspend" : "suspend"}`, {
+        method: "POST",
+      });
+      await mutate("admin/servers");
+    } catch {
+      /* keep the row; toast handled globally */
+    } finally {
       setBusy(false);
     }
   };
@@ -926,6 +950,19 @@ function AdminContainerRow({ c }: { c: AdminServer }) {
       >
         {t(`admin.servers.state.${c.state}`)}
       </span>
+      <button
+        type="button"
+        onClick={toggleSuspend}
+        disabled={busy}
+        className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors disabled:opacity-50 ${
+          suspended
+            ? "border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+            : "border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+        }`}
+      >
+        {suspended ? <Play className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+        {t(suspended ? "admin.containers.unsuspend" : "admin.containers.suspend")}
+      </button>
       <button
         type="button"
         onClick={remove}

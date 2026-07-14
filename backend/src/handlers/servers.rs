@@ -275,6 +275,16 @@ pub async fn list(
         if let Some(id) = s.id {
             if seen.insert(id) {
                 let mut p = s.public();
+                if p.expires_at.is_none() {
+                    if let Ok(Some(sub)) = state
+                        .db
+                        .subscriptions()
+                        .find_one(doc! { "server_id": id, "status": "active" })
+                        .await
+                    {
+                        p.renews_at = sub.current_period_end;
+                    }
+                }
                 // The initial root password is only ever shown to the owner, not
                 // to org members / grantees who share the server.
                 if s.user_id != auth.user_id {
@@ -393,6 +403,21 @@ pub async fn get(
     }
 
     let mut p = server.public();
+    // Subscription VPS carry no `expires_at` (the subscription drives the
+    // lifecycle) — surface the next renewal date so the panel doesn't mislabel
+    // them "lifetime". Only when both are null is it truly vitalícia.
+    if p.expires_at.is_none() {
+        if let Some(sid) = server.id {
+            if let Ok(Some(sub)) = state
+                .db
+                .subscriptions()
+                .find_one(doc! { "server_id": sid, "status": "active" })
+                .await
+            {
+                p.renews_at = sub.current_period_end;
+            }
+        }
+    }
     // The initial root password is only ever shown to the owner.
     if server.user_id != auth.user_id {
         p.root_password = None;

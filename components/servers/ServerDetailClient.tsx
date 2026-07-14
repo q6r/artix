@@ -351,7 +351,13 @@ function Overview({
     { label: t("srv.field.created"), value: fmtDate(server.created_at, locale) },
     {
       label: t("srv.field.expires"),
-      value: server.expires_at ? fmtDate(server.expires_at, locale) : t("srv.field.lifetime"),
+      // Subscription VPS renew (renews_at); admin-set expiry uses expires_at;
+      // only with neither is it truly lifetime.
+      value: server.renews_at
+        ? fmtDate(server.renews_at, locale)
+        : server.expires_at
+          ? fmtDate(server.expires_at, locale)
+          : t("srv.field.lifetime"),
     },
   ];
 

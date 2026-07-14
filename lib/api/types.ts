@@ -188,6 +188,8 @@ export type Server = {
   type?: 0 | 1;
   container?: ContainerInfo;
   expires_at?: string | null;
+  /** Next renewal date (subscription VPS). Null + null expires_at = lifetime. */
+  renews_at?: string | null;
   created_at: string;
 };
 
@@ -217,6 +219,8 @@ export type ContainerInfo = {
   // Voice (container_type === "voice", Mumble)
   admin_password?: string | null;
   voice_password?: string | null;
+  /** Admin-suspended: owner can't start/restart/delete until an admin lifts it. */
+  suspended?: boolean;
 };
 
 /** A site container's custom-domain status. */

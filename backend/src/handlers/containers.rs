@@ -5,7 +5,7 @@
 
 use axum::{
     extract::{Multipart, Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -335,6 +335,7 @@ pub(crate) async fn provision_container_record(
             max_players: None,
             admin_password: None,
             voice_password: None,
+            suspended: false,
         }),
         expires_at: None,
         created_at: now,
@@ -732,6 +733,9 @@ async fn sync_mc_status(state: &AppState) {
         let (Some(c), Some(sid)) = (s.container.as_ref(), s.id) else {
             continue;
         };
+        if c.suspended {
+            continue; // frozen by an admin — don't let the reconciler flip state
+        }
         let st = match agent.status(&c.app_id).await {
             Ok(x) => x,
             Err(_) => continue,
@@ -2044,6 +2048,69 @@ pub async fn upload_world(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
+#[derive(Deserialize)]
+pub struct WorldUrlReq {
+    pub url: String,
+}
+
+/// POST /containers/:id/world-url — restore a world/data archive from a URL. The
+/// agent downloads it server-side, which sidesteps the panel's Cloudflare upload
+/// cap (~100MB) — so big backups (multi-GB) work. The download can take minutes,
+/// well past Cloudflare's request timeout, so we kick it off in the background
+/// (the server shows `provisioning`) and return immediately.
+pub async fn import_world_url(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<WorldUrlReq>,
+) -> AppResult<Json<serde_json::Value>> {
+    auth.scope(cap::SERVICES_CREATE)?;
+    let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
+    let app_id = mc_app_id(&server)?;
+    let url = req.url.trim().to_string();
+    let low = url.to_lowercase();
+    if !(low.starts_with("http://") || low.starts_with("https://")) {
+        return Err(AppError::Validation("Use um link http(s) de download direto.".into()));
+    }
+    if url.len() > 2048 {
+        return Err(AppError::Validation("Link muito longo.".into()));
+    }
+    let sid = server.id.unwrap();
+    // Show the restore in progress; the agent does the heavy lifting async so this
+    // request can't block on a multi-GB download.
+    state
+        .db
+        .servers()
+        .update_one(doc! { "_id": sid }, doc! { "$set": { "state": "provisioning" } })
+        .await?;
+    let st = state.clone();
+    tokio::spawn(async move {
+        let Some(agent) = st.agent.as_ref() else {
+            mc_mark_error(&st, sid).await;
+            return;
+        };
+        match agent.import_world_url(&app_id, &url).await {
+            Ok(_) => mc_mark_running(&st, sid).await,
+            Err(e) => {
+                // Persist a short reason so the panel can show why it failed.
+                let _ = st
+                    .db
+                    .servers()
+                    .update_one(
+                        doc! { "_id": sid },
+                        doc! { "$set": {
+                            "state": "error",
+                            "container.status": "error",
+                            "container.build_log": e.user_message(),
+                        }},
+                    )
+                    .await;
+            }
+        }
+    });
+    Ok(Json(serde_json::json!({ "ok": true, "started": true })))
+}
+
 /// POST /containers/:id/icon — set the server icon (64x64 PNG).
 pub async fn upload_icon(
     State(state): State<AppState>,
@@ -2780,6 +2847,20 @@ pub async fn action(
     }
     let server = access(&state, auth.user_id, &id, server_perm::POWER).await?;
     let c = require_container(&server)?;
+    if c.suspended {
+        return Err(AppError::Conflict(
+            "Container suspenso — não é possível iniciar, parar ou reiniciar. Fale com o suporte.".into(),
+        ));
+    }
+    // The Docker container is only created by a successful deploy. Without one
+    // there is nothing to act on — say so, instead of letting Docker's raw
+    // "No such container" bubble up to the user.
+    if !c.deployed {
+        return Err(AppError::Conflict(
+            "Este container ainda não foi criado — envie um deploy do seu código primeiro."
+                .into(),
+        ));
+    }
     agent(&state)?.action(&c.app_id, action).await?;
     let mapped = match action {
         "stop" => "stopped",
@@ -2885,6 +2966,11 @@ pub async fn delete(
     auth.scope(cap::SERVICES_DELETE)?;
     let server = access(&state, auth.user_id, &id, server_perm::DELETE).await?;
     let c = require_container(&server)?;
+    if c.suspended {
+        return Err(AppError::Conflict(
+            "Container suspenso não pode ser deletado. Fale com o suporte.".into(),
+        ));
+    }
     let was_minecraft = c.mc_port.is_some();
     let mc_sub = if was_minecraft { c.subdomain.clone() } else { None };
     let _ = agent(&state)?.delete(&c.app_id).await;
@@ -2899,5 +2985,96 @@ pub async fn delete(
             let _ = crate::cloudflare::clear_mc_dns(&state, &sub).await;
         }
     }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+// ----------------------------- admin: suspend -----------------------------
+
+/// POST /admin/containers/:id/suspend — freeze a container (admin override).
+/// Stops the Docker container and marks it suspended: the owner can no longer
+/// start, restart or delete it until an admin lifts the suspension. Uses a
+/// dedicated `container.suspended` flag so the status reconciler can't clear it.
+pub async fn admin_suspend(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    auth.require(crate::permissions::perm::NODES_MANAGE)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
+    let server = state
+        .db
+        .servers()
+        .find_one(doc! { "_id": oid, "type": 1 })
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let app_id = require_container(&server)?.app_id.clone();
+    // Best-effort power-off; the freeze holds even if the agent is unreachable.
+    if let Some(a) = state.agent.as_ref() {
+        let _ = a.action(&app_id, "stop").await;
+    }
+    state
+        .db
+        .servers()
+        .update_one(
+            doc! { "_id": oid },
+            doc! { "$set": {
+                "container.suspended": true,
+                "state": "suspended",
+                "container.status": "suspended",
+                "updated_at": bson::DateTime::from_chrono(Utc::now()),
+            }},
+        )
+        .await?;
+    crate::security::audit(
+        &state,
+        auth.user_id,
+        crate::permissions::perm::NODES_MANAGE,
+        Some(oid),
+        &headers,
+        doc! { "action": "container.suspend" },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// POST /admin/containers/:id/unsuspend — lift a container's suspension. Leaves
+/// it stopped; the owner can start it again.
+pub async fn admin_unsuspend(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    auth.require(crate::permissions::perm::NODES_MANAGE)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
+    state
+        .db
+        .servers()
+        .find_one(doc! { "_id": oid, "type": 1 })
+        .await?
+        .ok_or(AppError::NotFound)?;
+    state
+        .db
+        .servers()
+        .update_one(
+            doc! { "_id": oid },
+            doc! { "$set": {
+                "container.suspended": false,
+                "state": "stopped",
+                "container.status": "stopped",
+                "updated_at": bson::DateTime::from_chrono(Utc::now()),
+            }},
+        )
+        .await?;
+    crate::security::audit(
+        &state,
+        auth.user_id,
+        crate::permissions::perm::NODES_MANAGE,
+        Some(oid),
+        &headers,
+        doc! { "action": "container.unsuspend" },
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

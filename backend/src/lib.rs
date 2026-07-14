@@ -182,6 +182,14 @@ pub fn build_router(state: AppState) -> Router {
             "/servers/:id/unsuspend",
             post(handlers::admin_servers::unsuspend_server),
         )
+        .route(
+            "/containers/:id/suspend",
+            post(handlers::containers::admin_suspend),
+        )
+        .route(
+            "/containers/:id/unsuspend",
+            post(handlers::containers::admin_unsuspend),
+        )
         .route("/tickets", get(handlers::tickets::admin_list))
         .route("/tickets/:id", get(handlers::tickets::admin_get))
         .route("/tickets/:id/messages", post(handlers::tickets::admin_reply))
@@ -367,6 +375,10 @@ pub fn build_router(state: AppState) -> Router {
             "/containers/:id/world",
             post(handlers::containers::upload_world)
                 .layer(DefaultBodyLimit::max(300 * 1024 * 1024)),
+        )
+        .route(
+            "/containers/:id/world-url",
+            post(handlers::containers::import_world_url),
         )
         .route(
             "/containers/:id/icon",
