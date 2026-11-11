@@ -47,7 +47,7 @@ pub struct Relay {
     #[serde(default = "d_port")]
     pub server_port: u16,
     pub token: String,
-    /// frpc admin API for this relay's instance, e.g. `http://10.0.0.x:7400`.
+    /// frpc admin API for this relay's instance, e.g. `http://192.0.2.10:7400`.
     pub admin_url: String,
     #[serde(default = "d_user")]
     pub admin_user: String,
@@ -130,7 +130,7 @@ impl Frp {
             .build()
             .ok()?;
         // Docker VM IP for Minecraft port forwarding: explicit, else parsed from
-        // the container agent URL (e.g. http://10.0.0.29:9090 -> 10.0.0.29).
+        // the container agent URL (e.g. http://192.0.2.10:9090 -> 192.0.2.10).
         let vm_ip = if !cfg.container_vm_ip.trim().is_empty() {
             cfg.container_vm_ip.trim().to_string()
         } else {

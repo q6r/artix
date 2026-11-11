@@ -2704,7 +2704,8 @@ const CHAT_CHANNELS: &[&str] = &["geral"];
 
 /// GET /community/voice-state — who is currently in the community voice call and
 /// whether they are muted, read live from LiveKit's RoomService. Best-effort: if
-/// LiveKit is unreachable we return an empty roster (200), never a 500.
+/// LiveKit is unreachable we return an empty roster (200), never a 500. 503 when
+/// the integration is not configured (no key pair, or no `LIVEKIT_HOST_URL`).
 pub async fn community_voice_state(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -2713,6 +2714,13 @@ pub async fn community_voice_state(
     let secret = &state.cfg.livekit_api_secret;
     if key.is_empty() || secret.is_empty() {
         return Err(AppError::Unavailable("voice chat is not configured".into()));
+    }
+    // The roster comes from LiveKit's server API, whose internal address has no
+    // default: without LIVEKIT_HOST_URL there is nothing to ask.
+    if state.cfg.livekit_host_url.is_empty() {
+        return Err(AppError::Unavailable(
+            "voice chat roster is not configured".into(),
+        ));
     }
     let now = chrono::Utc::now().timestamp();
     let claims = serde_json::json!({

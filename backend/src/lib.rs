@@ -2,6 +2,7 @@ pub mod agent;
 pub mod auth;
 pub mod authn;
 pub mod billing;
+pub mod cli;
 pub mod cloudflare;
 pub mod config;
 pub mod crypto;

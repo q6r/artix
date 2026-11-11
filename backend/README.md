@@ -139,7 +139,9 @@ A seeded `super_admin` system role holds `*`.
 ```
 src/
   main.rs        router, middleware, seed, bootstrap
-  config.rs      typed env config (fails fast on weak prod secrets)
+  config.rs      typed env config (reports every problem at once, fails fast
+                 on weak prod secrets, never prints a secret)
+  cli.rs         arguments + the `--check-config` report
   error.rs       AppError -> JSON
   state.rs       AppState (cfg, db, http, rate buckets)
   db.rs          connect + indexes + Collections trait
@@ -162,6 +164,11 @@ src/
 - **Unit** (`tests/unit.rs`, no DB): HMAC token roundtrip / tamper / wrong-secret
   / expiry, refresh hashing + pepper, Argon2 verify, permission wildcards,
   OAuth signed-state CSRF (tamper/expiry/wrong-secret).
+- **Config** (`tests/config.rs`, no DB, never touches the process environment):
+  strict parsing (booleans, numbers, `APP_ENV`, JSON), blank == unset, every
+  problem reported at once, secrets never printed, warnings for half-configured
+  integrations, `--check-config`, and a parity check that `.env.example` and
+  `../docs/configuration.md` list exactly the variables the loader reads.
 - **Integration** (`tests/integration.rs`): drive the real router via
   `tower::oneshot` and prove the protections — register/login, **refresh
   rotation + reuse → whole session revoked**, **instant revocation** on logout,
@@ -196,17 +203,32 @@ cargo test                                            # unit only (DB tests no-o
 ## Build / run / test
 
 ```bash
-cp .env.example .env          # fill secrets (AUTH_TOKEN_SECRET >= 32 bytes)
+cp .env.example .env          # then set AUTH_TOKEN_SECRET and AUTH_REFRESH_PEPPER
+                              # (required; at least 32 bytes in production)
+cargo run -- --check-config   # validate .env + environment, touches no service
 cargo run                     # dev (needs a MongoDB on MONGO_URI)
 cargo fmt && cargo clippy --all-targets
 cargo test
 docker compose -f docker-compose.dev.yml up --build   # api + mongo locally
 ```
 
+Configuration comes from the environment and from a `.env` file in the working
+directory (a variable that is really set wins over `.env`; a blank `KEY=` line
+counts as unset). Every variable, its default and whether it is a secret is in
+[`../docs/configuration.md`](../docs/configuration.md), and `.env.example` lists
+them all. `--check-config` loads the configuration exactly like the server does,
+then either prints every problem at once on stderr (exit code 1) or the enabled
+features plus any warnings on stdout (exit code 0). It never connects to MongoDB
+or any other service, so it is safe to run in CI or before a restart. When the
+configuration is invalid the server prints the same list and exits with code 1.
+
 ## Deploy (Proxmox `api` CT)
 
 ```bash
 cargo build --release         # or build the Docker image
 # copy target/release/artixcloud-api to the CT, set /etc/artixcloud/.env
+# validate it before every (re)start; this contacts no service:
+#   cd /etc/artixcloud && artixcloud-api --check-config
+#   docker run --rm --env-file .env <image> --check-config    # Docker image
 # run under systemd; front it with the proxy CT for TLS.
 ```
