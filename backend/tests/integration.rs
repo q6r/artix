@@ -1,21 +1,20 @@
 //! Integration tests that prove the security protections end-to-end.
 //!
 //! They require a MongoDB. Set `MONGO_TEST_URI` to run them; otherwise each
-//! test no-ops (so `cargo test` stays green without a DB). In CI:
+//! test no-ops (so `cargo test` stays green without a DB). Users sign in through
+//! the real passwordless flow (`request-code`, then `verify-code`). In CI:
 //!
 //! ```bash
 //! MONGO_TEST_URI=mongodb://localhost:27017 cargo test
 //! ```
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use artixcloud_api::{
-    build_router,
-    config::{AppEnv, Config},
-    db,
-    db::Collections,
-    seed,
-    state::AppState,
+    auth::token, build_router, config::Config, db, db::Collections, seed, state::AppState,
 };
 use axum::{
     body::{to_bytes, Body},
@@ -26,50 +25,35 @@ use bson::{doc, oid::ObjectId};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
+/// The configuration the tests run with. It goes through the real loader, so a new
+/// setting gets its default here instead of breaking a hand-written `Config { .. }`.
+/// Only what a test needs to control is set; no integration is configured.
 fn test_config(uri: String, db_name: String, auth_rate: u32) -> Config {
+    let vars: HashMap<&str, String> = HashMap::from([
+        ("API_HOST", "127.0.0.1".to_string()),
+        ("API_PORT", "0".to_string()),
+        ("PUBLIC_APP_URL", "http://app.test".to_string()),
+        ("PUBLIC_API_URL", "http://api.test".to_string()),
+        ("MONGO_URI", uri),
+        ("MONGO_DB", db_name),
+        (
+            "AUTH_TOKEN_SECRET",
+            "integration-secret-key-32-bytes-minimum!".to_string(),
+        ),
+        (
+            "AUTH_REFRESH_PEPPER",
+            "integration-pepper-key-32-bytes-minimum!".to_string(),
+        ),
+        ("EMAIL_FROM", "test@artix".to_string()),
+        ("RATE_LIMIT_PER_MINUTE", "10000".to_string()),
+        ("AUTH_RATE_LIMIT_PER_MINUTE", auth_rate.to_string()),
+    ]);
+    let cfg =
+        Config::from_lookup(|key| vars.get(key).cloned()).expect("a valid test configuration");
+    // No browser origin is allowed in the tests (the loader would default to localhost).
     Config {
-        env: AppEnv::Development,
-        host: "127.0.0.1".into(),
-        port: 0,
         cors_origins: vec![],
-        public_app_url: "http://app.test".into(),
-        public_api_url: "http://api.test".into(),
-        mongo_uri: uri,
-        mongo_db: db_name,
-        auth_token_secret: b"integration-secret-key-32-bytes-minimum!".to_vec(),
-        auth_refresh_pepper: b"integration-pepper-key-32-bytes-minimum!".to_vec(),
-        access_ttl_secs: 900,
-        refresh_ttl_secs: 2_592_000,
-        email_token_ttl_secs: 86_400,
-        login_code_ttl_secs: 600,
-        resend_api_key: String::new(),
-        email_from: "test@artix".into(),
-        discord_client_id: String::new(),
-        discord_client_secret: String::new(),
-        github_client_id: String::new(),
-        github_client_secret: String::new(),
-        rate_limit_per_min: 10_000,
-        auth_rate_limit_per_min: auth_rate,
-        max_failed_logins: 8,
-        lockout_minutes: 15,
-        proxmox_api_url: String::new(),
-        proxmox_token_id: String::new(),
-        proxmox_token_secret: String::new(),
-        proxmox_node: "pve".into(),
-        proxmox_template_vmid: 9000,
-        proxmox_storage: "local-lvm".into(),
-        proxmox_bridge: "vmbr0".into(),
-        proxmox_insecure: false,
-        pagci_api_url: String::new(),
-        pagci_api_token: String::new(),
-        pagci_wallet_id: String::new(),
-        pagci_wallet_name: "artix".into(),
-        pagci_webhook_secret: String::new(),
-        billing_currency: "BRL".into(),
-        billing_grace_days: 3,
-        billing_renew_lead_days: 3,
-        billing_pix_ttl_secs: 86_400,
-        billing_worker_enabled: false,
+        ..cfg
     }
 }
 
@@ -116,64 +100,146 @@ async fn req(
     (status, v)
 }
 
-fn register_body(email: &str) -> Value {
-    json!({ "email": email, "password": "supersecret123", "display_name": "Test User" })
+/// The code the tests sign in with (see [`swap_in_known_code`]).
+const KNOWN_CODE: &str = "123456";
+
+/// A test cannot read the emailed login code (no email is delivered), so it replaces the stored hash
+/// of the random code with the hash of a known one. After that the code can be "read from the email".
+async fn swap_in_known_code(state: &AppState, user_id: ObjectId) {
+    let swapped = state
+        .db
+        .email_tokens()
+        .update_one(
+            doc! { "user_id": user_id, "kind": "login_code", "used_at": null },
+            doc! { "$set": {
+                "token_hash": token::hash_refresh(KNOWN_CODE, &state.cfg.auth_refresh_pepper),
+            } },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        swapped.modified_count, 1,
+        "request-code stores exactly one unused login code"
+    );
+}
+
+/// A signed-in user.
+struct SignedIn {
+    access: String,
+    refresh: String,
+    user_id: ObjectId,
+}
+
+/// Signs `email` in through the real passwordless flow: `POST /auth/request-code` creates the account,
+/// then `POST /auth/verify-code` trades the code for a session.
+async fn sign_in(state: &AppState, app: &Router, email: &str) -> SignedIn {
+    let (s, _) = req(
+        app,
+        "POST",
+        "/auth/request-code",
+        None,
+        Some(json!({ "email": email, "display_name": "Test User" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "request-code");
+    let user = state
+        .db
+        .users()
+        .find_one(doc! { "email": email })
+        .await
+        .unwrap()
+        .expect("request-code creates the account");
+    swap_in_known_code(state, user.id.unwrap()).await;
+
+    let (s, v) = req(
+        app,
+        "POST",
+        "/auth/verify-code",
+        None,
+        Some(json!({ "email": email, "code": KNOWN_CODE })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "verify-code");
+    SignedIn {
+        access: v["access_token"].as_str().unwrap().to_string(),
+        refresh: v["refresh_token"].as_str().unwrap().to_string(),
+        user_id: ObjectId::parse_str(v["user"]["id"].as_str().unwrap()).unwrap(),
+    }
 }
 
 #[tokio::test]
-async fn register_login_and_wrong_password() {
-    let Some((_state, app)) = setup(1000).await else {
+async fn sign_in_with_an_emailed_code() {
+    let Some((state, app)) = setup(1000).await else {
         return;
     };
     let email = "reg@test.com";
 
+    // Asking for a code creates the account and always answers `ok`.
     let (s, v) = req(
         &app,
         "POST",
-        "/auth/register",
+        "/auth/request-code",
         None,
-        Some(register_body(email)),
+        Some(json!({ "email": email })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v["ok"], json!(true));
+    let user = state
+        .db
+        .users()
+        .find_one(doc! { "email": email })
+        .await
+        .unwrap()
+        .expect("the account was created");
+    assert!(!user.email_verified);
+    swap_in_known_code(&state, user.id.unwrap()).await;
+
+    // A wrong code is refused and signs nobody in.
+    let (s, v) = req(
+        &app,
+        "POST",
+        "/auth/verify-code",
+        None,
+        Some(json!({ "email": email, "code": "000000" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert!(v["access_token"].is_null());
+
+    // The right code signs in and proves the email address.
+    let verify = json!({ "email": email, "code": KNOWN_CODE });
+    let (s, v) = req(
+        &app,
+        "POST",
+        "/auth/verify-code",
+        None,
+        Some(verify.clone()),
     )
     .await;
     assert_eq!(s, StatusCode::OK);
     assert!(v["access_token"].is_string());
     assert!(v["refresh_token"].is_string());
+    let user = state
+        .db
+        .users()
+        .find_one(doc! { "email": email })
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(user.email_verified);
 
-    let (s, _) = req(
-        &app,
-        "POST",
-        "/auth/login",
-        None,
-        Some(json!({ "email": email, "password": "supersecret123" })),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK);
-
-    let (s, _) = req(
-        &app,
-        "POST",
-        "/auth/login",
-        None,
-        Some(json!({ "email": email, "password": "WRONG" })),
-    )
-    .await;
+    // A code works once.
+    let (s, _) = req(&app, "POST", "/auth/verify-code", None, Some(verify)).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
 async fn refresh_rotation_and_reuse_detection() {
-    let Some((_state, app)) = setup(1000).await else {
+    let Some((state, app)) = setup(1000).await else {
         return;
     };
-    let (_, v) = req(
-        &app,
-        "POST",
-        "/auth/register",
-        None,
-        Some(register_body("rot@test.com")),
-    )
-    .await;
-    let rt1 = v["refresh_token"].as_str().unwrap().to_string();
+    let rt1 = sign_in(&state, &app, "rot@test.com").await.refresh;
 
     // Rotate: rt1 -> rt2
     let (s, v) = req(
@@ -213,18 +279,10 @@ async fn refresh_rotation_and_reuse_detection() {
 
 #[tokio::test]
 async fn me_requires_auth_and_logout_revokes() {
-    let Some((_state, app)) = setup(1000).await else {
+    let Some((state, app)) = setup(1000).await else {
         return;
     };
-    let (_, v) = req(
-        &app,
-        "POST",
-        "/auth/register",
-        None,
-        Some(register_body("me@test.com")),
-    )
-    .await;
-    let access = v["access_token"].as_str().unwrap().to_string();
+    let access = sign_in(&state, &app, "me@test.com").await.access;
 
     let (s, _) = req(&app, "GET", "/auth/me", None, None).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
@@ -242,30 +300,15 @@ async fn me_requires_auth_and_logout_revokes() {
 
 #[tokio::test]
 async fn idor_cannot_revoke_other_users_session() {
-    let Some((_state, app)) = setup(1000).await else {
+    let Some((state, app)) = setup(1000).await else {
         return;
     };
-    let (_, a) = req(
-        &app,
-        "POST",
-        "/auth/register",
-        None,
-        Some(register_body("a@test.com")),
-    )
-    .await;
-    let (_, b) = req(
-        &app,
-        "POST",
-        "/auth/register",
-        None,
-        Some(register_body("b@test.com")),
-    )
-    .await;
-    let access_a = a["access_token"].as_str().unwrap().to_string();
-    let rt_a = a["refresh_token"].as_str().unwrap();
-    let rt_b = b["refresh_token"].as_str().unwrap();
-    let sid_a = rt_a.split('.').next().unwrap();
-    let sid_b = rt_b.split('.').next().unwrap();
+    let a = sign_in(&state, &app, "a@test.com").await;
+    let b = sign_in(&state, &app, "b@test.com").await;
+    let access_a = a.access.clone();
+    // A refresh token is `<session id>.<secret>`.
+    let sid_a = a.refresh.split('.').next().unwrap();
+    let sid_b = b.refresh.split('.').next().unwrap();
 
     // A tries to revoke B's session -> 404 (ownership baked into the query).
     let (s, _) = req(
@@ -292,18 +335,10 @@ async fn idor_cannot_revoke_other_users_session() {
 
 #[tokio::test]
 async fn normal_user_blocked_from_admin() {
-    let Some((_state, app)) = setup(1000).await else {
+    let Some((state, app)) = setup(1000).await else {
         return;
     };
-    let (_, v) = req(
-        &app,
-        "POST",
-        "/auth/register",
-        None,
-        Some(register_body("plain@test.com")),
-    )
-    .await;
-    let access = v["access_token"].as_str().unwrap().to_string();
+    let access = sign_in(&state, &app, "plain@test.com").await.access;
 
     // Authenticated but without `users.read` -> 403, not 401.
     let (s, _) = req(&app, "GET", "/admin/users", Some(&access), None).await;
@@ -315,16 +350,8 @@ async fn admin_with_permission_allowed() {
     let Some((state, app)) = setup(1000).await else {
         return;
     };
-    let (_, v) = req(
-        &app,
-        "POST",
-        "/auth/register",
-        None,
-        Some(register_body("admin@test.com")),
-    )
-    .await;
-    let access = v["access_token"].as_str().unwrap().to_string();
-    let uid = ObjectId::parse_str(v["user"]["id"].as_str().unwrap()).unwrap();
+    let admin = sign_in(&state, &app, "admin@test.com").await;
+    let (access, uid) = (admin.access, admin.user_id);
 
     // Grant super_admin (which holds `*`).
     let role = state
@@ -361,15 +388,7 @@ async fn webhook_payment_settles_invoice_and_subscription() {
     let Some((state, app)) = setup(1000).await else {
         return;
     };
-    let (_, v) = req(
-        &app,
-        "POST",
-        "/auth/register",
-        None,
-        Some(register_body("pay@test.com")),
-    )
-    .await;
-    let uid = ObjectId::parse_str(v["user"]["id"].as_str().unwrap()).unwrap();
+    let uid = sign_in(&state, &app, "pay@test.com").await.user_id;
     let now = Utc::now();
 
     // A pending-payment VPS + subscription + an open invoice with a PagCI id.
@@ -388,11 +407,18 @@ async fn webhook_payment_settles_invoice_and_subscription() {
             state: ServerState::PendingPayment,
             ip: None,
             cloud_init_ssh_key: None,
+            storage: None,
+            root_password: None,
+            ssh_host: None,
+            ssh_port: None,
             specs: ServerSpecs {
                 vcpu: 2,
                 ram_gb: 4,
                 disk_gb: 50,
             },
+            server_type: 0,
+            container: None,
+            expires_at: None,
             created_at: now,
             updated_at: now,
         })
@@ -413,6 +439,7 @@ async fn webhook_payment_settles_invoice_and_subscription() {
             price_cents: 3990,
             currency: "BRL".into(),
             interval: "monthly".into(),
+            provider: Some("pix".into()),
             current_period_start: None,
             current_period_end: None,
             cancel_at_period_end: false,
@@ -442,6 +469,11 @@ async fn webhook_payment_settles_invoice_and_subscription() {
             payment_id: Some("pay_test_001".into()),
             pix_code: Some("000201...".into()),
             pix_qr_image: None,
+            provider: Some("pix".into()),
+            crypto_address: None,
+            crypto_amount_ltc: None,
+            crypto_expires_at: None,
+            stripe_url: None,
             paid_at: None,
             created_at: now,
             updated_at: now,
@@ -505,17 +537,20 @@ async fn auth_rate_limit_returns_429() {
     let Some((_state, app)) = setup(5).await else {
         return;
     };
-    let mut last = StatusCode::OK;
+    // Guessing login codes for one account over and over: the first five tries in a minute are
+    // answered, the sixth is refused before the handler looks at the code.
+    let mut statuses = Vec::new();
     for _ in 0..6 {
         let (s, _) = req(
             &app,
             "POST",
-            "/auth/login",
+            "/auth/verify-code",
             None,
-            Some(json!({ "email": "nobody@test.com", "password": "x" })),
+            Some(json!({ "email": "nobody@test.com", "code": "000000" })),
         )
         .await;
-        last = s;
+        statuses.push(s);
     }
-    assert_eq!(last, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(statuses[..5], [StatusCode::UNAUTHORIZED; 5]);
+    assert_eq!(statuses[5], StatusCode::TOO_MANY_REQUESTS);
 }
