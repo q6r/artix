@@ -8,6 +8,7 @@
   <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square">
   <img alt="Rust and Axum" src="https://img.shields.io/badge/Rust-Axum-b7410e?style=flat-square">
   <img alt="MongoDB 7" src="https://img.shields.io/badge/MongoDB-7-47a248?style=flat-square">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-5a61d6?style=flat-square">
   <a href="https://github.com/q6r/artix/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/q6r/artix/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
@@ -17,10 +18,10 @@
 
 This is the source of [ArtixCloud](https://artix.cloud). Customers pick a plan, pay with PIX, card or crypto, and manage
 their servers from a dashboard: power controls, live metrics, a console in the browser, files, backups, domains and
-support. The code is public so you can read it and learn from it. Several pieces are tied to that service (a Brazilian
-PIX provider, the `artix.cloud` domain, a Portuguese-first interface), and nothing here is packaged as a turnkey
-self-hosted product: running your own copy means bringing a Proxmox cluster, a Docker VM, MongoDB and the third-party
-accounts listed in [docs/configuration.md](docs/configuration.md).
+support. The code is public under the MIT license, so you can read it, learn from it and reuse parts of it. Several
+pieces are tied to that service (a Brazilian PIX provider, the `artix.cloud` domain, a Portuguese-first interface), and
+nothing here is packaged as a turnkey self-hosted product: running your own copy means bringing a Proxmox cluster, a
+Docker VM, MongoDB and the third-party accounts listed in [docs/configuration.md](docs/configuration.md).
 
 ## Features
 
@@ -169,6 +170,10 @@ this, plus a syntax check of the container agent and a build of the API image.
 ## Contributing
 
 Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the setup, the checks and the commit style.
+
+## License
+
+[MIT](LICENSE) © 2026 q6r
 
 ## Credits
 

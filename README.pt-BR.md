@@ -8,6 +8,7 @@
   <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square">
   <img alt="Rust e Axum" src="https://img.shields.io/badge/Rust-Axum-b7410e?style=flat-square">
   <img alt="MongoDB 7" src="https://img.shields.io/badge/MongoDB-7-47a248?style=flat-square">
+  <img alt="licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-5a61d6?style=flat-square">
   <a href="https://github.com/q6r/artix/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/q6r/artix/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
@@ -17,10 +18,11 @@
 
 Este é o código-fonte da [ArtixCloud](https://artix.cloud). O cliente escolhe um plano, paga com PIX, cartão ou cripto e
 gerencia os servidores num painel: controle de energia, métricas ao vivo, console no navegador, arquivos, backups,
-domínios e suporte. O código é público para você ler e aprender com ele. Várias peças são específicas desse serviço (um
-provedor de PIX brasileiro, o domínio `artix.cloud`, uma interface que começa em português), e nada aqui vem empacotado
-como um produto pronto para auto-hospedar: rodar a sua própria cópia exige um cluster Proxmox, uma VM com Docker, o
-MongoDB e as contas de terceiros listadas em [docs/configuration.md](docs/configuration.md) (em inglês).
+domínios e suporte. O código é público, sob a licença MIT, para você ler, aprender com ele e reaproveitar partes. Várias
+peças são específicas desse serviço (um provedor de PIX brasileiro, o domínio `artix.cloud`, uma interface que começa em
+português), e nada aqui vem empacotado como um produto pronto para auto-hospedar: rodar a sua própria cópia exige um
+cluster Proxmox, uma VM com Docker, o MongoDB e as contas de terceiros listadas em
+[docs/configuration.md](docs/configuration.md) (em inglês).
 
 ## Recursos
 
@@ -173,6 +175,10 @@ pulados. O CI roda tudo isso, mais uma checagem de sintaxe do agente de containe
 
 Issues e pull requests são bem-vindos. O [CONTRIBUTING.md](CONTRIBUTING.md) (em inglês) cobre o ambiente, as checagens e
 o estilo dos commits.
+
+## Licença
+
+[MIT](LICENSE) © 2026 q6r
 
 ## Créditos
 
