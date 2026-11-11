@@ -1,13 +1,15 @@
 # ---- build ----
-FROM rust:1.82-slim AS builder
+# 1.88 is the oldest toolchain the locked dependencies accept (see `rust-version` in Cargo.toml).
+# Keep the Debian release the same as in the runtime stage so the binary finds a compatible glibc.
+FROM rust:1.88-slim-bookworm AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config && rm -rf /var/lib/apt/lists/*
 # Cache deps
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release || true
+RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release --locked || true
 # Real sources
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --locked
 
 # ---- runtime ----
 FROM debian:bookworm-slim AS runtime
