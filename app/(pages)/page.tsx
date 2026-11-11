@@ -27,6 +27,7 @@ import RotatingWord from "@/components/RotatingWord";
 import ConnectivityBeams from "@/components/ConnectivityBeams";
 import TechCloud from "@/components/TechCloud";
 import { getT } from "@/lib/i18n";
+import { apiBaseUrl } from "@/lib/env";
 
 const features = [
   {
@@ -87,7 +88,6 @@ const faqs = [
 
 export default async function Home() {
   const t = await getT();
-  const apiBase = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:8080";
   let plans: {
     id: string;
     name: string;
@@ -97,10 +97,12 @@ export default async function Home() {
     price_cents: number;
   }[] = [];
   try {
-    const res = await fetch(`${apiBase}/billing/plans`, { cache: "no-store" });
+    const res = await fetch(`${apiBaseUrl()}/billing/plans`, { cache: "no-store" });
     if (res.ok) plans = (await res.json()).plans ?? [];
-  } catch {
-    // backend unavailable: pricing section renders empty rather than stale.
+  } catch (err) {
+    // Backend unavailable (or API_INTERNAL_URL invalid): the pricing section renders
+    // empty rather than stale, and the cause is logged.
+    console.error("home: could not load the plans", err);
   }
   return (
     <div className="flex flex-1 flex-col">

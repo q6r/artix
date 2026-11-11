@@ -7,19 +7,20 @@
 
 import { cookies } from "next/headers";
 import type { User } from "@/lib/api/types";
+import { apiBaseUrl, cookiesInsecure } from "@/lib/env";
 
 export const AT_COOKIE = "artix_at";
 export const RT_COOKIE = "artix_rt";
 
 /** Base URL of the Rust backend (server-side only — never shipped to the client). */
 export function backendBase(): string {
-  return process.env.API_INTERNAL_URL ?? "http://localhost:8080";
+  return apiBaseUrl();
 }
 
-// Secure cookies everywhere except explicit local development over http. This
-// avoids leaking tokens in cleartext on staging/preview boxes (where NODE_ENV
-// may not be "production" but the host is still internet-reachable).
-const cookieSecure = process.env.COOKIE_INSECURE !== "true";
+// Secure cookies everywhere except explicit local development over http
+// (COOKIE_INSECURE=true). This avoids leaking tokens in cleartext on staging/preview
+// boxes (where NODE_ENV may not be "production" but the host is still internet-reachable).
+const cookieSecure = () => !cookiesInsecure();
 
 type Tokens = {
   access_token: string;
@@ -30,7 +31,7 @@ type Tokens = {
 /** Persist the access + refresh tokens as httpOnly cookies. */
 export async function setAuthCookies(t: Tokens) {
   const jar = await cookies();
-  const common = { httpOnly: true, secure: cookieSecure, sameSite: "lax" as const, path: "/" };
+  const common = { httpOnly: true, secure: cookieSecure(), sameSite: "lax" as const, path: "/" };
   jar.set(AT_COOKIE, t.access_token, { ...common, maxAge: Math.max(60, t.expires_in) });
   // Refresh token lifetime mirrors the backend default (30 days).
   jar.set(RT_COOKIE, t.refresh_token, { ...common, maxAge: 60 * 60 * 24 * 30 });

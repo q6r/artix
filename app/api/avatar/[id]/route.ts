@@ -2,14 +2,14 @@
 // persisting it) and we stream the bytes with cache headers so the browser
 // caches it — the provider's expiring CDN URL never reaches the client.
 
-const backend = process.env.API_INTERNAL_URL ?? "http://localhost:8080";
+import { apiBaseUrl } from "@/lib/env";
 
 export async function GET(
   _request: Request,
   ctx: RouteContext<"/api/avatar/[id]">,
 ) {
   const { id } = await ctx.params;
-  const res = await fetch(`${backend}/avatar/${encodeURIComponent(id)}`, {
+  const res = await fetch(`${apiBaseUrl()}/avatar/${encodeURIComponent(id)}`, {
     cache: "no-store",
   });
   if (!res.ok) return new Response(null, { status: 404 });
