@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any -- copied from Animate UI, kept close to upstream */
 
 import * as React from 'react';
 import {

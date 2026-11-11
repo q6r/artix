@@ -26,8 +26,8 @@ function initials(name: string) {
 
 export function Avatar({ user, size = 32 }: { user: UserRef; size?: number }) {
   if (user.avatar_url) {
-    // eslint-disable-next-line @next/next/no-img-element
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={user.avatar_url}
         alt=""

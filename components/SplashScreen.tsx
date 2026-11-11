@@ -25,7 +25,6 @@ export default function SplashScreen() {
     // Fallback in case onAnimationEnd doesn't fire.
     const fallback = setTimeout(finish, TOTAL_MS + 300);
     return () => clearTimeout(fallback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const finish = () => {
