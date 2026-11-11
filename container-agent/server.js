@@ -1,5 +1,5 @@
 "use strict";
-// Artix Container Agent — runs on the dedicated Docker VM (see memory: container-infra).
+// Artix Container Agent — runs on the dedicated Docker VM.
 // The Rust backend is the only client; it calls this HTTP API (bearer-auth) to
 // deploy and manage user containers via the local Docker daemon. Nothing here is
 // exposed to end users directly.
