@@ -64,7 +64,13 @@ pub async fn create(
     if slug.is_empty() || slug.len() > 40 || slug == "custom" {
         return Err(AppError::Validation("invalid slug".into()));
     }
-    if state.db.plans().find_one(doc! { "slug": &slug }).await?.is_some() {
+    if state
+        .db
+        .plans()
+        .find_one(doc! { "slug": &slug })
+        .await?
+        .is_some()
+    {
         return Err(AppError::Conflict("slug already exists".into()));
     }
     let now = Utc::now();

@@ -22,7 +22,10 @@ fn frp(state: &AppState) -> AppResult<&crate::frp::Frp> {
         .ok_or_else(|| AppError::Unavailable("relays not configured".into()))
 }
 
-pub async fn list(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json<Vec<RelayInfo>>> {
+pub async fn list(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> AppResult<Json<Vec<RelayInfo>>> {
     auth.require(perm::RELAYS_READ)?;
     Ok(Json(frp(&state)?.admin_list(&state).await?))
 }

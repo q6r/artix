@@ -9,7 +9,12 @@ use bson::{doc, oid::ObjectId};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::{authn::AuthUser, db::Collections, error::{AppError, AppResult}, state::AppState};
+use crate::{
+    authn::AuthUser,
+    db::Collections,
+    error::{AppError, AppResult},
+    state::AppState,
+};
 
 #[derive(Serialize)]
 pub struct SessionView {

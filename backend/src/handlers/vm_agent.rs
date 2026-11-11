@@ -54,7 +54,9 @@ pub async fn disk_usage(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::VIEW).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
     // Degrade gracefully: if the agent isn't up yet (or the VM is off), report
     // zero rather than 500 — the panel just hides the disk card.
     let (used, total) = px.agent_fsinfo(vmid).await.unwrap_or((0, 0));
@@ -85,7 +87,9 @@ pub async fn list(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::CONSOLE).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
     let dir = q.path.unwrap_or_else(|| "/root".into());
     valid_path(&dir)?;
 
@@ -119,7 +123,12 @@ pub async fn list(
         entries.push(FileEntry {
             kind: kind.to_string(),
             size: parts[1].parse().unwrap_or(0),
-            mtime: parts[2].split('.').next().unwrap_or("0").parse().unwrap_or(0),
+            mtime: parts[2]
+                .split('.')
+                .next()
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0),
             name: parts[3].to_string(),
         });
     }
@@ -147,10 +156,14 @@ pub async fn read(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::CONSOLE).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
     valid_path(&q.path)?;
     let content = px.agent_file_read(vmid, &q.path).await?;
-    Ok(Json(serde_json::json!({ "path": q.path, "content": content })))
+    Ok(Json(
+        serde_json::json!({ "path": q.path, "content": content }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -168,7 +181,9 @@ pub async fn write(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
     valid_path(&req.path)?;
     px.agent_file_write(vmid, &req.path, &req.content).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -190,7 +205,9 @@ pub async fn create(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
     valid_path(&req.path)?;
     let argv: Vec<&str> = if req.dir {
         vec!["/bin/mkdir", "-p", &req.path]
@@ -217,7 +234,9 @@ pub async fn delete(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
     valid_path(&q.path)?;
     if q.path == "/" || q.path.trim_end_matches('/').is_empty() {
         return Err(AppError::Validation("refusing to delete /".into()));
@@ -249,10 +268,14 @@ pub async fn mv(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
     valid_path(&req.from)?;
     valid_path(&req.to)?;
-    let (code, _out, err) = px.agent_exec(vmid, &["/bin/mv", "-f", &req.from, &req.to]).await?;
+    let (code, _out, err) = px
+        .agent_exec(vmid, &["/bin/mv", "-f", &req.from, &req.to])
+        .await?;
     if code != 0 {
         return Err(AppError::Validation(if err.is_empty() {
             "move failed".into()
@@ -282,7 +305,9 @@ pub async fn console_exec(
 ) -> AppResult<Json<serde_json::Value>> {
     let server = access(&state, auth.user_id, &id, server_perm::CONSOLE).await?;
     let px = proxmox(&state)?;
-    let vmid = server.vmid.ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
+    let vmid = server
+        .vmid
+        .ok_or_else(|| AppError::Conflict("not provisioned".into()))?;
 
     let cwd = req.cwd.unwrap_or_else(|| "/root".into());
     // Run in cwd, then emit the new pwd behind a sentinel so we can track `cd`.

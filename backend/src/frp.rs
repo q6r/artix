@@ -161,7 +161,12 @@ impl Frp {
     /// Relay names an admin has disabled (no doc = enabled).
     async fn disabled_names(&self, state: &AppState) -> BTreeSet<String> {
         let mut out = BTreeSet::new();
-        if let Ok(mut cur) = state.db.relay_settings().find(doc! { "enabled": false }).await {
+        if let Ok(mut cur) = state
+            .db
+            .relay_settings()
+            .find(doc! { "enabled": false })
+            .await
+        {
             while cur.advance().await.unwrap_or(false) {
                 if let Ok(rs) = cur.deserialize_current() {
                     out.insert(rs.name);
@@ -221,16 +226,29 @@ impl Frp {
         relay_name: Option<&str>,
         port: Option<i32>,
     ) -> AppResult<(String, i32)> {
-        let server = state.db.servers().find_one(doc! { "_id": server_id }).await?.ok_or(AppError::NotFound)?;
+        let server = state
+            .db
+            .servers()
+            .find_one(doc! { "_id": server_id })
+            .await?
+            .ok_or(AppError::NotFound)?;
         let old_host = server.ssh_host.clone();
         let relay = match relay_name {
             Some(n) => self.relay_by_name(n).ok_or(AppError::NotFound)?.clone(),
-            None => match server.ssh_host.as_deref().and_then(|h| self.relay_by_host(h)) {
+            None => match server
+                .ssh_host
+                .as_deref()
+                .and_then(|h| self.relay_by_host(h))
+            {
                 Some(r) => r.clone(),
                 None => return Err(AppError::Validation("server has no relay".into())),
             },
         };
-        let used = self.used_by_host(state).await?.remove(&relay.host).unwrap_or_default();
+        let used = self
+            .used_by_host(state)
+            .await?
+            .remove(&relay.host)
+            .unwrap_or_default();
         let new_port = match port {
             Some(p) => {
                 if p < relay.port_min as i32 || p > relay.port_max as i32 {
@@ -322,7 +340,10 @@ impl Frp {
         cfg.push_str("auth.method = \"token\"\n");
         cfg.push_str(&format!("auth.token = \"{}\"\n", relay.token));
         cfg.push_str("webServer.addr = \"0.0.0.0\"\n");
-        cfg.push_str(&format!("webServer.port = {}\n", admin_port_of(&relay.admin_url)));
+        cfg.push_str(&format!(
+            "webServer.port = {}\n",
+            admin_port_of(&relay.admin_url)
+        ));
         cfg.push_str(&format!("webServer.user = \"{}\"\n", relay.admin_user));
         cfg.push_str(&format!("webServer.password = \"{}\"\n", relay.admin_pass));
 
@@ -417,18 +438,27 @@ impl Frp {
 
         let put = self
             .http
-            .put(format!("{}/api/config", relay.admin_url.trim_end_matches('/')))
+            .put(format!(
+                "{}/api/config",
+                relay.admin_url.trim_end_matches('/')
+            ))
             .basic_auth(&relay.admin_user, Some(&relay.admin_pass))
             .body(cfg)
             .send()
             .await
             .map_err(|e| AppError::Internal(format!("frpc put: {e}")))?;
         if !put.status().is_success() {
-            return Err(AppError::Internal(format!("frpc put status {}", put.status())));
+            return Err(AppError::Internal(format!(
+                "frpc put status {}",
+                put.status()
+            )));
         }
         let reload = self
             .http
-            .get(format!("{}/api/reload", relay.admin_url.trim_end_matches('/')))
+            .get(format!(
+                "{}/api/reload",
+                relay.admin_url.trim_end_matches('/')
+            ))
             .basic_auth(&relay.admin_user, Some(&relay.admin_pass))
             .send()
             .await
@@ -472,7 +502,9 @@ impl Frp {
                 Err(e) => return Err(AppError::Db(e)),
             }
         }
-        Err(AppError::Unavailable("could not allocate relay port".into()))
+        Err(AppError::Unavailable(
+            "could not allocate relay port".into(),
+        ))
     }
 
     /// Minecraft public ports already allocated (global — one Docker VM).
@@ -537,7 +569,9 @@ impl Frp {
                 Err(e) => return Err(AppError::Db(e)),
             }
         }
-        Err(AppError::Unavailable("could not allocate minecraft port".into()))
+        Err(AppError::Unavailable(
+            "could not allocate minecraft port".into(),
+        ))
     }
 
     /// Re-sync every relay (used after a delete so dropped VPS disappear).
@@ -595,7 +629,9 @@ pub async fn mc_ensure(state: &AppState, server: &Server) -> AppResult<Option<(S
 pub async fn provision_tunnel(state: AppState, vmid: i64, server_id: Option<ObjectId>) {
     let Some(sid) = server_id else { return };
     let Some(frp) = state.frp.clone() else { return };
-    let Some(px) = state.proxmox.clone() else { return };
+    let Some(px) = state.proxmox.clone() else {
+        return;
+    };
 
     let mut ip = None;
     for _ in 0..18 {
@@ -613,7 +649,11 @@ pub async fn provision_tunnel(state: AppState, vmid: i64, server_id: Option<Obje
     };
 
     // Determine the relay: keep the existing one (reinstall) or pick a new one.
-    let relay = match server.ssh_host.as_deref().and_then(|h| frp.relay_by_host(h)) {
+    let relay = match server
+        .ssh_host
+        .as_deref()
+        .and_then(|h| frp.relay_by_host(h))
+    {
         Some(r) => r.clone(),
         None => match frp.pick_relay(&state).await {
             Ok(r) => r,

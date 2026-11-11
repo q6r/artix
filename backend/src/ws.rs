@@ -235,7 +235,9 @@ async fn handle_client_msg(
 /// Ownership check: the ticket's user must own the resource behind the topic.
 async fn owns_topic(state: &AppState, user_id: ObjectId, topic: &str) -> bool {
     if let Some(id) = topic.strip_prefix("invoice:") {
-        let Ok(oid) = ObjectId::parse_str(id) else { return false };
+        let Ok(oid) = ObjectId::parse_str(id) else {
+            return false;
+        };
         return state
             .db
             .invoices()
@@ -246,7 +248,9 @@ async fn owns_topic(state: &AppState, user_id: ObjectId, topic: &str) -> bool {
             .is_some();
     }
     if let Some(id) = topic.strip_prefix("server:") {
-        let Ok(oid) = ObjectId::parse_str(id) else { return false };
+        let Ok(oid) = ObjectId::parse_str(id) else {
+            return false;
+        };
         return state
             .db
             .servers()
@@ -269,7 +273,9 @@ async fn push_server_status(
     user_id: ObjectId,
     id: &str,
 ) -> Result<(), axum::Error> {
-    let Ok(oid) = ObjectId::parse_str(id) else { return Ok(()) };
+    let Ok(oid) = ObjectId::parse_str(id) else {
+        return Ok(());
+    };
     let server = state
         .db
         .servers()

@@ -158,7 +158,9 @@ pub async fn patch_user(
     let mut unset = doc! {};
     if let Some(mb) = req.bonus_ram_mb {
         if !(0..=131_072).contains(&mb) {
-            return Err(AppError::Validation("bonus_ram_mb out of range (0–131072)".into()));
+            return Err(AppError::Validation(
+                "bonus_ram_mb out of range (0–131072)".into(),
+            ));
         }
         set.insert("bonus_ram_mb", mb);
         let date = req
@@ -178,7 +180,11 @@ pub async fn patch_user(
     if !unset.is_empty() {
         update.insert("$unset", unset);
     }
-    let res = state.db.users().update_one(doc! { "_id": oid }, update).await?;
+    let res = state
+        .db
+        .users()
+        .update_one(doc! { "_id": oid }, update)
+        .await?;
     if res.matched_count == 0 {
         return Err(AppError::NotFound);
     }
@@ -223,7 +229,15 @@ pub async fn ban_user(
             doc! { "$set": { "revoked": true, "revoked_reason": "banned" }},
         )
         .await?;
-    security::audit(&state, auth.user_id, perm::USERS_BAN, Some(oid), &headers, doc! { "reason": reason }).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::USERS_BAN,
+        Some(oid),
+        &headers,
+        doc! { "reason": reason },
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -246,7 +260,15 @@ pub async fn unban_user(
     if res.matched_count == 0 {
         return Err(AppError::NotFound);
     }
-    security::audit(&state, auth.user_id, "users.unban", Some(oid), &headers, doc! {}).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        "users.unban",
+        Some(oid),
+        &headers,
+        doc! {},
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -293,9 +315,7 @@ fn validate_permissions(perms: &[String]) -> AppResult<()> {
 /// Catalog of assignable base permissions (for building role editors in the UI).
 /// Per-category support permissions (`support.cat.<slug>`) are derived on the
 /// client from the ticket categories list.
-pub async fn list_permissions(
-    auth: AuthUser,
-) -> AppResult<Json<serde_json::Value>> {
+pub async fn list_permissions(auth: AuthUser) -> AppResult<Json<serde_json::Value>> {
     auth.require(perm::ROLES_READ)?;
     Ok(Json(serde_json::json!({
         "permissions": ALL_PERMISSIONS,
@@ -334,8 +354,18 @@ pub async fn create_role(
         }
     })?;
     let rid = res.inserted_id.as_object_id();
-    security::audit(&state, auth.user_id, perm::ROLES_CREATE, rid, &headers, doc! { "name": name }).await;
-    Ok(Json(serde_json::json!({ "ok": true, "id": rid.map(|r| r.to_hex()) })))
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::ROLES_CREATE,
+        rid,
+        &headers,
+        doc! { "name": name },
+    )
+    .await;
+    Ok(Json(
+        serde_json::json!({ "ok": true, "id": rid.map(|r| r.to_hex()) }),
+    ))
 }
 
 pub async fn delete_role(
@@ -360,9 +390,20 @@ pub async fn delete_role(
     state
         .db
         .users()
-        .update_many(doc! { "role_ids": oid }, doc! { "$pull": { "role_ids": oid }})
+        .update_many(
+            doc! { "role_ids": oid },
+            doc! { "$pull": { "role_ids": oid }},
+        )
         .await?;
-    security::audit(&state, auth.user_id, perm::ROLES_DELETE, Some(oid), &headers, doc! {}).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::ROLES_DELETE,
+        Some(oid),
+        &headers,
+        doc! {},
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -380,19 +421,37 @@ pub async fn assign_role(
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require(perm::PERMISSIONS_ASSIGN)?;
     let uid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
-    let rid = ObjectId::parse_str(&req.role_id).map_err(|_| AppError::Validation("bad role id".into()))?;
-    if state.db.roles().find_one(doc! { "_id": rid }).await?.is_none() {
+    let rid = ObjectId::parse_str(&req.role_id)
+        .map_err(|_| AppError::Validation("bad role id".into()))?;
+    if state
+        .db
+        .roles()
+        .find_one(doc! { "_id": rid })
+        .await?
+        .is_none()
+    {
         return Err(AppError::NotFound);
     }
     let res = state
         .db
         .users()
-        .update_one(doc! { "_id": uid }, doc! { "$addToSet": { "role_ids": rid }})
+        .update_one(
+            doc! { "_id": uid },
+            doc! { "$addToSet": { "role_ids": rid }},
+        )
         .await?;
     if res.matched_count == 0 {
         return Err(AppError::NotFound);
     }
-    security::audit(&state, auth.user_id, perm::PERMISSIONS_ASSIGN, Some(uid), &headers, doc! { "role": rid }).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::PERMISSIONS_ASSIGN,
+        Some(uid),
+        &headers,
+        doc! { "role": rid },
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -410,7 +469,15 @@ pub async fn remove_role(
         .users()
         .update_one(doc! { "_id": uid }, doc! { "$pull": { "role_ids": rid }})
         .await?;
-    security::audit(&state, auth.user_id, "permissions.revoke", Some(uid), &headers, doc! { "role": rid }).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        "permissions.revoke",
+        Some(uid),
+        &headers,
+        doc! { "role": rid },
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -540,7 +607,15 @@ pub async fn update_role(
                 AppError::Db(e)
             }
         })?;
-    security::audit(&state, auth.user_id, perm::ROLES_UPDATE, Some(oid), &headers, doc! {}).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::ROLES_UPDATE,
+        Some(oid),
+        &headers,
+        doc! {},
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -576,7 +651,15 @@ pub async fn suspend_user(
             doc! { "$set": { "revoked": true, "revoked_reason": "suspended" }},
         )
         .await?;
-    security::audit(&state, auth.user_id, "users.suspend", Some(oid), &headers, doc! {}).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        "users.suspend",
+        Some(oid),
+        &headers,
+        doc! {},
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -599,7 +682,15 @@ pub async fn unsuspend_user(
     if res.matched_count == 0 {
         return Err(AppError::NotFound);
     }
-    security::audit(&state, auth.user_id, "users.unsuspend", Some(oid), &headers, doc! {}).await;
+    security::audit(
+        &state,
+        auth.user_id,
+        "users.unsuspend",
+        Some(oid),
+        &headers,
+        doc! {},
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -619,15 +710,55 @@ pub async fn delete_user(
         return Err(AppError::NotFound);
     }
     // Cascade: remove everything tied to the user.
-    let _ = state.db.sessions().delete_many(doc! { "user_id": oid }).await;
-    let _ = state.db.oauth_accounts().delete_many(doc! { "user_id": oid }).await;
-    let _ = state.db.email_tokens().delete_many(doc! { "user_id": oid }).await;
-    let _ = state.db.api_keys().delete_many(doc! { "user_id": oid }).await;
+    let _ = state
+        .db
+        .sessions()
+        .delete_many(doc! { "user_id": oid })
+        .await;
+    let _ = state
+        .db
+        .oauth_accounts()
+        .delete_many(doc! { "user_id": oid })
+        .await;
+    let _ = state
+        .db
+        .email_tokens()
+        .delete_many(doc! { "user_id": oid })
+        .await;
+    let _ = state
+        .db
+        .api_keys()
+        .delete_many(doc! { "user_id": oid })
+        .await;
     // Org memberships + per-server grants + support tickets.
-    let _ = state.db.org_members().delete_many(doc! { "user_id": oid }).await;
-    let _ = state.db.server_grants().delete_many(doc! { "user_id": oid }).await;
-    let _ = state.db.tickets().delete_many(doc! { "user_id": oid }).await;
-    let _ = state.db.backup_codes().delete_many(doc! { "user_id": oid }).await;
-    security::audit(&state, auth.user_id, perm::USERS_DELETE, Some(oid), &headers, doc! {}).await;
+    let _ = state
+        .db
+        .org_members()
+        .delete_many(doc! { "user_id": oid })
+        .await;
+    let _ = state
+        .db
+        .server_grants()
+        .delete_many(doc! { "user_id": oid })
+        .await;
+    let _ = state
+        .db
+        .tickets()
+        .delete_many(doc! { "user_id": oid })
+        .await;
+    let _ = state
+        .db
+        .backup_codes()
+        .delete_many(doc! { "user_id": oid })
+        .await;
+    security::audit(
+        &state,
+        auth.user_id,
+        perm::USERS_DELETE,
+        Some(oid),
+        &headers,
+        doc! {},
+    )
+    .await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

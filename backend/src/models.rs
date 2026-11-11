@@ -18,7 +18,7 @@ pub enum UserStatus {
 pub struct User {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
-    pub email: String,           // stored lowercased
+    pub email: String, // stored lowercased
     pub email_verified: bool,
     /// `None` for OAuth-only accounts that never set a password.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -982,10 +982,7 @@ impl UserRef {
         UserRef {
             // Never expose the raw provider URL (it expires) — point at the
             // server-side avatar proxy, which fetches + caches on demand.
-            avatar_url: u
-                .avatar_url
-                .as_ref()
-                .map(|_| format!("/api/avatar/{id}")),
+            avatar_url: u.avatar_url.as_ref().map(|_| format!("/api/avatar/{id}")),
             display_name: u.display_name.clone(),
             email: u.email.clone(),
             id,

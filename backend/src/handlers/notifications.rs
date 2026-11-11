@@ -5,11 +5,7 @@ use bson::doc;
 use serde::Serialize;
 
 use crate::{
-    authn::AuthUser,
-    db::Collections,
-    error::AppResult,
-    models::NotificationPublic,
-    state::AppState,
+    authn::AuthUser, db::Collections, error::AppResult, models::NotificationPublic, state::AppState,
 };
 
 #[derive(Serialize)]

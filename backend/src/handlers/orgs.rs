@@ -17,7 +17,7 @@ use crate::{
     authn::AuthUser,
     db::Collections,
     error::{AppError, AppResult},
-    models::{OrgMember, OrgMemberPublic, OrgRole, Organization, OrgPublic, ServerPublic},
+    models::{OrgMember, OrgMemberPublic, OrgPublic, OrgRole, Organization, ServerPublic},
     permissions::server_perm,
     state::AppState,
 };
@@ -27,7 +27,11 @@ fn oid(id: &str) -> AppResult<ObjectId> {
 }
 
 /// The caller's role in an org, or `None` if not a member.
-async fn role_of(state: &AppState, org_id: ObjectId, user_id: ObjectId) -> AppResult<Option<OrgRole>> {
+async fn role_of(
+    state: &AppState,
+    org_id: ObjectId,
+    user_id: ObjectId,
+) -> AppResult<Option<OrgRole>> {
     Ok(state
         .db
         .org_members()
@@ -37,12 +41,22 @@ async fn role_of(state: &AppState, org_id: ObjectId, user_id: ObjectId) -> AppRe
 }
 
 /// Require membership; returns the caller's role.
-async fn require_member(state: &AppState, org_id: ObjectId, user_id: ObjectId) -> AppResult<OrgRole> {
-    role_of(state, org_id, user_id).await?.ok_or(AppError::NotFound)
+async fn require_member(
+    state: &AppState,
+    org_id: ObjectId,
+    user_id: ObjectId,
+) -> AppResult<OrgRole> {
+    role_of(state, org_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound)
 }
 
 /// Require owner/admin (management rights).
-async fn require_manager(state: &AppState, org_id: ObjectId, user_id: ObjectId) -> AppResult<OrgRole> {
+async fn require_manager(
+    state: &AppState,
+    org_id: ObjectId,
+    user_id: ObjectId,
+) -> AppResult<OrgRole> {
     let role = require_member(state, org_id, user_id).await?;
     if matches!(role, OrgRole::Owner | OrgRole::Admin) {
         Ok(role)
@@ -120,11 +134,24 @@ pub async fn list(
     let mut out = Vec::new();
     while members.advance().await? {
         let m = members.deserialize_current()?;
-        let Some(org) = state.db.organizations().find_one(doc! { "_id": m.org_id }).await? else {
+        let Some(org) = state
+            .db
+            .organizations()
+            .find_one(doc! { "_id": m.org_id })
+            .await?
+        else {
             continue;
         };
-        let member_count = state.db.org_members().count_documents(doc! { "org_id": m.org_id }).await?;
-        let server_count = state.db.servers().count_documents(doc! { "org_id": m.org_id }).await?;
+        let member_count = state
+            .db
+            .org_members()
+            .count_documents(doc! { "org_id": m.org_id })
+            .await?;
+        let server_count = state
+            .db
+            .servers()
+            .count_documents(doc! { "org_id": m.org_id })
+            .await?;
         out.push(OrgPublic {
             id: m.org_id.to_hex(),
             name: org.name,
@@ -164,7 +191,11 @@ pub async fn get(
 
     // Members with their per-server grants.
     let mut members = Vec::new();
-    let mut cursor = state.db.org_members().find(doc! { "org_id": org_id }).await?;
+    let mut cursor = state
+        .db
+        .org_members()
+        .find(doc! { "org_id": org_id })
+        .await?;
     while cursor.advance().await? {
         let m = cursor.deserialize_current()?;
         let user = state.db.users().find_one(doc! { "_id": m.user_id }).await?;
@@ -256,11 +287,26 @@ pub async fn delete(
     state
         .db
         .servers()
-        .update_many(doc! { "org_id": org_id }, doc! { "$unset": { "org_id": "" }})
+        .update_many(
+            doc! { "org_id": org_id },
+            doc! { "$unset": { "org_id": "" }},
+        )
         .await?;
-    let _ = state.db.server_grants().delete_many(doc! { "org_id": org_id }).await;
-    let _ = state.db.org_members().delete_many(doc! { "org_id": org_id }).await;
-    state.db.organizations().delete_one(doc! { "_id": org_id }).await?;
+    let _ = state
+        .db
+        .server_grants()
+        .delete_many(doc! { "org_id": org_id })
+        .await;
+    let _ = state
+        .db
+        .org_members()
+        .delete_many(doc! { "org_id": org_id })
+        .await;
+    state
+        .db
+        .organizations()
+        .delete_one(doc! { "_id": org_id })
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -319,7 +365,9 @@ pub async fn add_member(
         }
         return Err(e.into());
     }
-    Ok(Json(serde_json::json!({ "ok": true, "user_id": target_id.to_hex() })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "user_id": target_id.to_hex() }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -426,12 +474,17 @@ pub async fn add_server(
         .await?
         .ok_or(AppError::NotFound)?;
     if server.org_id.is_some() {
-        return Err(AppError::Conflict("server already in an organization".into()));
+        return Err(AppError::Conflict(
+            "server already in an organization".into(),
+        ));
     }
     state
         .db
         .servers()
-        .update_one(doc! { "_id": server_id }, doc! { "$set": { "org_id": org_id }})
+        .update_one(
+            doc! { "_id": server_id },
+            doc! { "$set": { "org_id": org_id }},
+        )
         .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -445,7 +498,11 @@ pub async fn remove_server(
     let sid = oid(&server_id)?;
     require_manager(&state, org_id, auth.user_id).await?;
 
-    let _ = state.db.server_grants().delete_many(doc! { "server_id": sid }).await;
+    let _ = state
+        .db
+        .server_grants()
+        .delete_many(doc! { "server_id": sid })
+        .await;
     let res = state
         .db
         .servers()

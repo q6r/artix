@@ -75,9 +75,7 @@ impl AppError {
                 "rate_limited",
                 "Too many requests, slow down".into(),
             ),
-            AppError::Unavailable(m) => {
-                (StatusCode::SERVICE_UNAVAILABLE, "unavailable", m.clone())
-            }
+            AppError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable", m.clone()),
             AppError::InvalidCredentials => (
                 StatusCode::UNAUTHORIZED,
                 "invalid_credentials",

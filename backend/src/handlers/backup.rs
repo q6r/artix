@@ -69,7 +69,9 @@ pub async fn status(
         .backup_codes()
         .count_documents(doc! { "user_id": auth.user_id, "used_at": null })
         .await?;
-    Ok(Json(serde_json::json!({ "enabled": remaining > 0, "remaining": remaining })))
+    Ok(Json(
+        serde_json::json!({ "enabled": remaining > 0, "remaining": remaining }),
+    ))
 }
 
 /// Disable backup codes entirely.
@@ -123,7 +125,9 @@ pub async fn verify(
         return Err(AppError::Forbidden);
     }
     super::auth::check_lock(&user, now)?;
-    let user_id = user.id.ok_or_else(|| AppError::Internal("user id".into()))?;
+    let user_id = user
+        .id
+        .ok_or_else(|| AppError::Internal("user id".into()))?;
 
     let hash = token::hash_refresh(&code, &state.cfg.auth_refresh_pepper);
     let entry = state
@@ -133,8 +137,14 @@ pub async fn verify(
         .await?;
     let Some(entry) = entry else {
         super::auth::register_failure(&state, &user).await;
-        crate::security::log_event(&state, Some(user_id), "backup_code_failed", &headers, doc! {})
-            .await;
+        crate::security::log_event(
+            &state,
+            Some(user_id),
+            "backup_code_failed",
+            &headers,
+            doc! {},
+        )
+        .await;
         return Err(AppError::InvalidCredentials);
     };
     super::auth::clear_failures(&state, user_id).await;

@@ -64,11 +64,23 @@ impl StripeClient {
             ("cancel_url", cancel),
             ("client_reference_id", invoice_id.to_string()),
             ("metadata[invoice_id]", invoice_id.to_string()),
-            ("payment_intent_data[metadata][invoice_id]", invoice_id.to_string()),
+            (
+                "payment_intent_data[metadata][invoice_id]",
+                invoice_id.to_string(),
+            ),
             ("line_items[0][quantity]", "1".to_string()),
-            ("line_items[0][price_data][currency]", currency.to_lowercase()),
-            ("line_items[0][price_data][unit_amount]", amount_cents.to_string()),
-            ("line_items[0][price_data][product_data][name]", name.to_string()),
+            (
+                "line_items[0][price_data][currency]",
+                currency.to_lowercase(),
+            ),
+            (
+                "line_items[0][price_data][unit_amount]",
+                amount_cents.to_string(),
+            ),
+            (
+                "line_items[0][price_data][product_data][name]",
+                name.to_string(),
+            ),
         ];
         let res = self
             .http
@@ -91,8 +103,16 @@ impl StripeClient {
             return Err(AppError::Internal(format!("stripe status {status}: {msg}")));
         }
         Ok(StripeCheckout {
-            id: v.get("id").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-            url: v.get("url").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+            id: v
+                .get("id")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            url: v
+                .get("url")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
         })
     }
 

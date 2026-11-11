@@ -52,7 +52,12 @@ impl CryptoClient {
         })
     }
 
-    async fn send(&self, method: reqwest::Method, path: &str, body: Option<Value>) -> AppResult<Value> {
+    async fn send(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> AppResult<Value> {
         let mut rb = self
             .http
             .request(method, format!("{}{}", self.base, path))
@@ -96,7 +101,9 @@ impl CryptoClient {
             "fee_to_customer": self.fee_to_customer,
             "expiration_minutes": expiration_minutes,
         });
-        let d = self.send(reqwest::Method::POST, "/v1/crypto/payments", Some(body)).await?;
+        let d = self
+            .send(reqwest::Method::POST, "/v1/crypto/payments", Some(body))
+            .await?;
         let get = |k: &str| d.get(k).cloned().unwrap_or(Value::Null);
         Ok(CryptoCharge {
             payment_id: get("id").as_str().unwrap_or_default().to_string(),
@@ -111,8 +118,15 @@ impl CryptoClient {
     /// Current status of a payment (`pending` | `paid` | `expired`).
     pub async fn payment_status(&self, payment_id: &str) -> AppResult<String> {
         let d = self
-            .send(reqwest::Method::GET, &format!("/v1/crypto/payments/{payment_id}"), None)
+            .send(
+                reqwest::Method::GET,
+                &format!("/v1/crypto/payments/{payment_id}"),
+                None,
+            )
             .await?;
-        Ok(d.get("status").and_then(|s| s.as_str()).unwrap_or("pending").to_string())
+        Ok(d.get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("pending")
+            .to_string())
     }
 }

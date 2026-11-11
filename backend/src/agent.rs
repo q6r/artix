@@ -461,7 +461,10 @@ impl AgentClient {
     pub async fn download_backup(&self, id: &str, name: &str) -> AppResult<reqwest::Response> {
         let res = self
             .http
-            .get(format!("{}/apps/{}/backup/download?name={}", self.base, id, name))
+            .get(format!(
+                "{}/apps/{}/backup/download?name={}",
+                self.base, id, name
+            ))
             .bearer_auth(&self.token)
             .send()
             .await

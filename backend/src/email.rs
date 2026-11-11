@@ -122,7 +122,12 @@ pub async fn send_verification(state: &AppState, to: &str, token: &str) {
          <p style=\"margin:16px 0 0;font-size:13px;color:{MUTED}\">Se você não criou esta conta, é só ignorar este e-mail.</p>",
         button("Confirmar e-mail", &url),
     );
-    let html = shell("Confirme seu e-mail para ativar sua conta ArtixCloud", ACCENT, "Confirme seu e-mail", &body);
+    let html = shell(
+        "Confirme seu e-mail para ativar sua conta ArtixCloud",
+        ACCENT,
+        "Confirme seu e-mail",
+        &body,
+    );
     send(state, to, "Confirme seu e-mail — ArtixCloud", html).await;
 }
 
@@ -134,31 +139,52 @@ pub async fn send_login_code(state: &AppState, to: &str, code: &str) {
          </div>\
          <p style=\"margin:0;font-size:13px;color:{MUTED}\">Se não foi você que pediu este código, ignore este e-mail — sua conta segue segura.</p>",
     );
-    let html = shell("Seu código de acesso ArtixCloud", ACCENT, "Seu código de acesso", &body);
+    let html = shell(
+        "Seu código de acesso ArtixCloud",
+        ACCENT,
+        "Seu código de acesso",
+        &body,
+    );
     send(state, to, "Seu código de acesso — ArtixCloud", html).await;
 }
 
 pub async fn send_password_reset(state: &AppState, to: &str, token: &str) {
-    let url = format!("{}/reset-password?token={}", state.cfg.public_app_url, token);
+    let url = format!(
+        "{}/reset-password?token={}",
+        state.cfg.public_app_url, token
+    );
     let body = format!(
         "<p style=\"margin:0 0 6px\">Recebemos um pedido para redefinir a senha da sua conta. Clique no botão abaixo para criar uma nova senha.</p>\
          {}\
          <p style=\"margin:16px 0 0;font-size:13px;color:{MUTED}\">Se você não pediu isso, ignore este e-mail — sua senha atual continua funcionando.</p>",
         button("Redefinir senha", &url),
     );
-    let html = shell("Redefina a senha da sua conta ArtixCloud", ACCENT, "Redefinir senha", &body);
+    let html = shell(
+        "Redefina a senha da sua conta ArtixCloud",
+        ACCENT,
+        "Redefinir senha",
+        &body,
+    );
     send(state, to, "Redefinir senha — ArtixCloud", html).await;
 }
 
 pub async fn send_email_change(state: &AppState, to: &str, token: &str) {
-    let url = format!("{}/confirm-email-change?token={}", state.cfg.public_app_url, token);
+    let url = format!(
+        "{}/confirm-email-change?token={}",
+        state.cfg.public_app_url, token
+    );
     let body = format!(
         "<p style=\"margin:0 0 6px\">Confirme este endereço para concluir a troca de e-mail da sua conta ArtixCloud.</p>\
          {}\
          <p style=\"margin:16px 0 0;font-size:13px;color:{MUTED}\">Se você não solicitou esta troca, ignore este e-mail.</p>",
         button("Confirmar novo e-mail", &url),
     );
-    let html = shell("Confirme seu novo endereço de e-mail", ACCENT, "Confirme seu novo e-mail", &body);
+    let html = shell(
+        "Confirme seu novo endereço de e-mail",
+        ACCENT,
+        "Confirme seu novo e-mail",
+        &body,
+    );
     send(state, to, "Confirme seu novo e-mail — ArtixCloud", html).await;
 }
 
@@ -168,14 +194,23 @@ pub async fn send_security_alert(state: &AppState, to: &str, message: &str) {
          <p style=\"margin:0;font-size:13px;color:{MUTED}\">Se foi você, nenhuma ação é necessária. Caso contrário, troque sua senha imediatamente.</p>",
         panel(&format!("<strong style=\"color:{HEADING}\">{}</strong>", esc(message))),
     );
-    let html = shell("Alerta de segurança da sua conta ArtixCloud", WARN, "Alerta de segurança", &body);
+    let html = shell(
+        "Alerta de segurança da sua conta ArtixCloud",
+        WARN,
+        "Alerta de segurança",
+        &body,
+    );
     send(state, to, "Alerta de segurança — ArtixCloud", html).await;
 }
 
 /// Format integer cents as a localized money string, e.g. `6990` -> `R$ 69,90`.
 fn money(amount_cents: i64, currency: &str) -> String {
     let sign = if currency == "BRL" { "R$" } else { currency };
-    format!("{sign} {},{:02}", amount_cents / 100, (amount_cents % 100).abs())
+    format!(
+        "{sign} {},{:02}",
+        amount_cents / 100,
+        (amount_cents % 100).abs()
+    )
 }
 
 pub async fn send_invoice(
@@ -210,7 +245,12 @@ pub async fn send_invoice(
          {summary}{}{pix}",
         button("Ver fatura e pagar", &url),
     );
-    let html = shell("Sua fatura ArtixCloud está disponível", ACCENT, "Sua fatura", &body);
+    let html = shell(
+        "Sua fatura ArtixCloud está disponível",
+        ACCENT,
+        "Sua fatura",
+        &body,
+    );
     send(state, &user.email, "Sua fatura — ArtixCloud", html).await;
 }
 
@@ -223,15 +263,29 @@ pub async fn send_payment_confirmed(
     let summary = panel(&format!(
         "{}{}",
         row("Fatura", &esc(&invoice.number)),
-        row("Valor pago", &money(invoice.amount_cents, &invoice.currency)),
+        row(
+            "Valor pago",
+            &money(invoice.amount_cents, &invoice.currency)
+        ),
     ));
     let body = format!(
         "<p style=\"margin:0 0 4px\">Recebemos seu pagamento — obrigado! Seu serviço já está ativo e pronto para usar.</p>\
          {summary}{}",
         button("Ir para o painel", &url),
     );
-    let html = shell("Pagamento confirmado — seu serviço está ativo", GOOD, "Pagamento confirmado", &body);
-    send(state, &user.email, "Pagamento confirmado — ArtixCloud", html).await;
+    let html = shell(
+        "Pagamento confirmado — seu serviço está ativo",
+        GOOD,
+        "Pagamento confirmado",
+        &body,
+    );
+    send(
+        state,
+        &user.email,
+        "Pagamento confirmado — ArtixCloud",
+        html,
+    )
+    .await;
 }
 
 pub async fn send_subscription_suspended(
@@ -248,14 +302,23 @@ pub async fn send_subscription_suspended(
         esc(&sub.plan),
         button("Regularizar pagamento", &url),
     );
-    let html = shell("Sua assinatura ArtixCloud foi suspensa", WARN, "Assinatura suspensa", &body);
+    let html = shell(
+        "Sua assinatura ArtixCloud foi suspensa",
+        WARN,
+        "Assinatura suspensa",
+        &body,
+    );
     send(state, &user.email, "Assinatura suspensa — ArtixCloud", html).await;
 }
 
 // ----------------------------- Admin server notices -----------------------------
 
 /// Default email when an admin suspends a VPS.
-pub async fn send_server_suspended(state: &AppState, user: &crate::models::User, server_name: &str) {
+pub async fn send_server_suspended(
+    state: &AppState,
+    user: &crate::models::User,
+    server_name: &str,
+) {
     let url = format!("{}/dashboard", state.cfg.public_app_url);
     let body = format!(
         "<p style=\"margin:0 0 6px\">Seu servidor <strong style=\"color:{HEADING}\">{}</strong> foi suspenso e o acesso está \
@@ -264,12 +327,21 @@ pub async fn send_server_suspended(state: &AppState, user: &crate::models::User,
         esc(server_name),
         button("Acessar painel", &url),
     );
-    let html = shell("Seu servidor ArtixCloud foi suspenso", WARN, "Servidor suspenso", &body);
+    let html = shell(
+        "Seu servidor ArtixCloud foi suspenso",
+        WARN,
+        "Servidor suspenso",
+        &body,
+    );
     send(state, &user.email, "Servidor suspenso — ArtixCloud", html).await;
 }
 
 /// Default email when an admin reactivates a previously suspended VPS.
-pub async fn send_server_reactivated(state: &AppState, user: &crate::models::User, server_name: &str) {
+pub async fn send_server_reactivated(
+    state: &AppState,
+    user: &crate::models::User,
+    server_name: &str,
+) {
     let url = format!("{}/dashboard", state.cfg.public_app_url);
     let body = format!(
         "<p style=\"margin:0 0 6px\">Boas notícias: seu servidor <strong style=\"color:{HEADING}\">{}</strong> foi reativado e \
@@ -278,7 +350,12 @@ pub async fn send_server_reactivated(state: &AppState, user: &crate::models::Use
         esc(server_name),
         button("Acessar painel", &url),
     );
-    let html = shell("Seu servidor ArtixCloud foi reativado", GOOD, "Servidor reativado", &body);
+    let html = shell(
+        "Seu servidor ArtixCloud foi reativado",
+        GOOD,
+        "Servidor reativado",
+        &body,
+    );
     send(state, &user.email, "Servidor reativado — ArtixCloud", html).await;
 }
 
@@ -356,7 +433,8 @@ pub fn md_to_html(src: &str) -> String {
 fn sanitize_url(url: &str) -> String {
     let u = url.trim();
     let lower = u.to_ascii_lowercase();
-    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:") {
+    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+    {
         u.replace('&', "&amp;")
             .replace('"', "%22")
             .replace('\'', "%27")

@@ -206,7 +206,11 @@ pub(crate) async fn public_user(state: &AppState, user: &User) -> AppResult<User
     let mut discord_linked = false;
     let mut github_linked = user.github_access_token.is_some();
     if let Some(uid) = user.id {
-        let mut cur = state.db.oauth_accounts().find(doc! { "user_id": uid }).await?;
+        let mut cur = state
+            .db
+            .oauth_accounts()
+            .find(doc! { "user_id": uid })
+            .await?;
         while cur.advance().await? {
             match cur.deserialize_current()?.provider.as_str() {
                 "discord" => discord_linked = true,
@@ -217,7 +221,10 @@ pub(crate) async fn public_user(state: &AppState, user: &User) -> AppResult<User
     }
     Ok(UserPublic {
         // Expose our cached proxy path, never the provider's (expiring) CDN URL.
-        avatar_url: user.avatar_url.as_ref().map(|_| format!("/api/avatar/{id}")),
+        avatar_url: user
+            .avatar_url
+            .as_ref()
+            .map(|_| format!("/api/avatar/{id}")),
         id,
         email: user.email.clone(),
         email_verified: user.email_verified,
@@ -261,7 +268,8 @@ pub async fn register(
         email: email.clone(),
         email_verified: false,
         password_hash: Some(
-            password::hash_password(&req.password).map_err(|_| AppError::Internal("hash".into()))?,
+            password::hash_password(&req.password)
+                .map_err(|_| AppError::Internal("hash".into()))?,
         ),
         display_name,
         avatar_url: None,
@@ -369,7 +377,11 @@ pub async fn login(
             crate::security::log_event(
                 &state,
                 u.id,
-                if lock { "account_locked" } else { "login_failed" },
+                if lock {
+                    "account_locked"
+                } else {
+                    "login_failed"
+                },
                 &headers,
                 doc! {},
             )
@@ -404,7 +416,9 @@ pub async fn login(
         return Err(AppError::Forbidden);
     }
 
-    let user_id = user.id.ok_or_else(|| AppError::Internal("user id".into()))?;
+    let user_id = user
+        .id
+        .ok_or_else(|| AppError::Internal("user id".into()))?;
     let (access, refresh) =
         issue_session(&state, user_id, client_ip(&headers), user_agent(&headers)).await?;
 
@@ -471,7 +485,9 @@ pub async fn request_code(
         return Ok(Json(serde_json::json!({ "ok": true })));
     }
 
-    let user_id = user.id.ok_or_else(|| AppError::Internal("user id".into()))?;
+    let user_id = user
+        .id
+        .ok_or_else(|| AppError::Internal("user id".into()))?;
 
     // Anti email-bomb: if a code was just sent, don't send another (the existing
     // one is still valid). Returns ok so we don't leak the throttle either.
@@ -547,7 +563,9 @@ pub async fn verify_code(
         return Err(AppError::Forbidden);
     }
     check_lock(&user, now)?;
-    let user_id = user.id.ok_or_else(|| AppError::Internal("user id".into()))?;
+    let user_id = user
+        .id
+        .ok_or_else(|| AppError::Internal("user id".into()))?;
 
     let hash = token::hash_refresh(code, &state.cfg.auth_refresh_pepper);
     let tok = state
@@ -703,7 +721,10 @@ pub async fn refresh(
     }))
 }
 
-pub async fn logout(State(state): State<AppState>, auth: AuthUser) -> AppResult<Json<serde_json::Value>> {
+pub async fn logout(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> AppResult<Json<serde_json::Value>> {
     state
         .db
         .sessions()
@@ -873,8 +894,8 @@ pub async fn reset_password(
         return Err(AppError::Unauthorized);
     }
 
-    let new_hash =
-        password::hash_password(&req.new_password).map_err(|_| AppError::Internal("hash".into()))?;
+    let new_hash = password::hash_password(&req.new_password)
+        .map_err(|_| AppError::Internal("hash".into()))?;
 
     state
         .db
@@ -919,8 +940,8 @@ pub async fn change_password(
         return Err(AppError::InvalidCredentials);
     }
 
-    let new_hash =
-        password::hash_password(&req.new_password).map_err(|_| AppError::Internal("hash".into()))?;
+    let new_hash = password::hash_password(&req.new_password)
+        .map_err(|_| AppError::Internal("hash".into()))?;
     let now = Utc::now();
     state
         .db
@@ -974,7 +995,13 @@ pub async fn change_email(
             return Err(AppError::InvalidCredentials);
         }
     }
-    if state.db.users().find_one(doc! { "email": &new_email }).await?.is_some() {
+    if state
+        .db
+        .users()
+        .find_one(doc! { "email": &new_email })
+        .await?
+        .is_some()
+    {
         return Err(AppError::Conflict("email already in use".into()));
     }
 
@@ -1019,7 +1046,13 @@ pub async fn confirm_email_change(
         .clone()
         .ok_or_else(|| AppError::Internal("missing target email".into()))?;
     // Race guard: target may have been taken between request and confirm.
-    if state.db.users().find_one(doc! { "email": &new_email }).await?.is_some() {
+    if state
+        .db
+        .users()
+        .find_one(doc! { "email": &new_email })
+        .await?
+        .is_some()
+    {
         return Err(AppError::Conflict("email already in use".into()));
     }
 
@@ -1031,7 +1064,11 @@ pub async fn confirm_email_change(
             doc! { "$set": { "used_at": bson::DateTime::from_chrono(now) }},
         )
         .await?;
-    let old = state.db.users().find_one(doc! { "_id": tok.user_id }).await?;
+    let old = state
+        .db
+        .users()
+        .find_one(doc! { "_id": tok.user_id })
+        .await?;
     state
         .db
         .users()

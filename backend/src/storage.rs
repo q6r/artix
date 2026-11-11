@@ -31,7 +31,11 @@ pub struct StorageReport {
 
 async fn committed_by_storage(state: &AppState) -> AppResult<HashMap<String, (i64, i64)>> {
     let mut map: HashMap<String, (i64, i64)> = HashMap::new();
-    let mut cur = state.db.servers().find(doc! { "storage": { "$ne": null } }).await?;
+    let mut cur = state
+        .db
+        .servers()
+        .find(doc! { "storage": { "$ne": null } })
+        .await?;
     while cur.advance().await? {
         let s = cur.deserialize_current()?;
         if let Some(st) = s.storage {

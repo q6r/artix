@@ -41,7 +41,8 @@ pub async fn stripe(
     if !stripe.verify_webhook(&body, sig) {
         return Err(AppError::Unauthorized);
     }
-    let v: Value = serde_json::from_slice(&body).map_err(|_| AppError::Validation("bad json".into()))?;
+    let v: Value =
+        serde_json::from_slice(&body).map_err(|_| AppError::Validation("bad json".into()))?;
     let event_type = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
     if matches!(
         event_type,
@@ -55,7 +56,10 @@ pub async fn stripe(
         let invoice_id = obj
             .and_then(|o| o.pointer("/metadata/invoice_id"))
             .and_then(|x| x.as_str())
-            .or_else(|| obj.and_then(|o| o.get("client_reference_id")).and_then(|x| x.as_str()));
+            .or_else(|| {
+                obj.and_then(|o| o.get("client_reference_id"))
+                    .and_then(|x| x.as_str())
+            });
         if paid {
             if let Some(iid) = invoice_id {
                 if let Ok(oid) = ObjectId::parse_str(iid) {
@@ -108,8 +112,8 @@ pub async fn pagci(
         return Err(AppError::Unauthorized);
     }
 
-    let env: Envelope =
-        serde_json::from_slice(&body).map_err(|_| AppError::Validation("invalid payload".into()))?;
+    let env: Envelope = serde_json::from_slice(&body)
+        .map_err(|_| AppError::Validation("invalid payload".into()))?;
 
     if env.resource_type == "payment" && !env.data.id.is_empty() {
         billing::handle_payment_event(&state, &env.event, &env.data.id).await?;
@@ -182,7 +186,8 @@ pub async fn github(
     }
 
     // Only redeploy on a push to the tracked ref (ignore other branches/deletes).
-    let v: Value = serde_json::from_slice(&body).map_err(|_| AppError::Validation("bad json".into()))?;
+    let v: Value =
+        serde_json::from_slice(&body).map_err(|_| AppError::Validation("bad json".into()))?;
     let pushed = v.get("ref").and_then(|x| x.as_str()).unwrap_or("");
     let short = pushed
         .strip_prefix("refs/heads/")

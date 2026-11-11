@@ -14,7 +14,10 @@ use crate::{
     authn::AuthUser,
     db::Collections,
     error::{AppError, AppResult},
-    models::{Announcement, AnnouncementButton, AnnouncementKind, AnnouncementPublic, AnnouncementScope, ButtonColor},
+    models::{
+        Announcement, AnnouncementButton, AnnouncementKind, AnnouncementPublic, AnnouncementScope,
+        ButtonColor,
+    },
     permissions::perm,
     state::AppState,
 };
@@ -23,7 +26,9 @@ use crate::{
 
 /// Active announcements (unauthenticated). The client filters by current path
 /// against each announcement's scope.
-pub async fn list_active(State(state): State<AppState>) -> AppResult<Json<Vec<AnnouncementPublic>>> {
+pub async fn list_active(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<AnnouncementPublic>>> {
     let mut cursor = state
         .db
         .announcements()
@@ -48,8 +53,8 @@ pub struct ButtonInput {
 
 #[derive(Deserialize)]
 pub struct AnnouncementInput {
-    pub kind: String,           // "banner" | "modal"
-    pub scope: String,          // "global" | "dashboard" | "pages"
+    pub kind: String,  // "banner" | "modal"
+    pub scope: String, // "global" | "dashboard" | "pages"
     #[serde(default)]
     pub pages: Vec<String>,
     pub title: String,
@@ -95,7 +100,14 @@ fn parse_color(s: &str) -> AppResult<ButtonColor> {
 
 fn build_fields(
     req: &AnnouncementInput,
-) -> AppResult<(AnnouncementKind, AnnouncementScope, Vec<String>, String, String, Vec<AnnouncementButton>)> {
+) -> AppResult<(
+    AnnouncementKind,
+    AnnouncementScope,
+    Vec<String>,
+    String,
+    String,
+    Vec<AnnouncementButton>,
+)> {
     let kind = parse_kind(&req.kind)?;
     let scope = parse_scope(&req.scope)?;
     let title = req.title.trim().to_string();
@@ -122,10 +134,14 @@ fn build_fields(
         let label = b.label.trim().to_string();
         let url = b.url.trim().to_string();
         if label.is_empty() || url.is_empty() {
-            return Err(AppError::Validation("button label and url are required".into()));
+            return Err(AppError::Validation(
+                "button label and url are required".into(),
+            ));
         }
         if !safe_url(&url) {
-            return Err(AppError::Validation("button url must be http(s) or a /path".into()));
+            return Err(AppError::Validation(
+                "button url must be http(s) or a /path".into(),
+            ));
         }
         buttons.push(AnnouncementButton {
             label,
@@ -240,7 +256,11 @@ pub async fn delete(
 ) -> AppResult<Json<serde_json::Value>> {
     auth.require(perm::ANNOUNCEMENTS_MANAGE)?;
     let oid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
-    let res = state.db.announcements().delete_one(doc! { "_id": oid }).await?;
+    let res = state
+        .db
+        .announcements()
+        .delete_one(doc! { "_id": oid })
+        .await?;
     if res.deleted_count == 0 {
         return Err(AppError::NotFound);
     }

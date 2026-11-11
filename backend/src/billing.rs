@@ -38,10 +38,34 @@ pub struct PlanDef {
 /// Defaults seeded into the `plans` collection on first run. After that, plans
 /// are managed by admins in the DB.
 pub const DEFAULT_PLANS: &[PlanDef] = &[
-    PlanDef { id: "cloud2", vcpu: 2, ram_gb: 4, disk_gb: 50, price_cents: 3990 },
-    PlanDef { id: "cloud4", vcpu: 4, ram_gb: 8, disk_gb: 100, price_cents: 6990 },
-    PlanDef { id: "cloud8", vcpu: 8, ram_gb: 16, disk_gb: 200, price_cents: 12990 },
-    PlanDef { id: "cloud16", vcpu: 8, ram_gb: 32, disk_gb: 400, price_cents: 22990 },
+    PlanDef {
+        id: "cloud2",
+        vcpu: 2,
+        ram_gb: 4,
+        disk_gb: 50,
+        price_cents: 3990,
+    },
+    PlanDef {
+        id: "cloud4",
+        vcpu: 4,
+        ram_gb: 8,
+        disk_gb: 100,
+        price_cents: 6990,
+    },
+    PlanDef {
+        id: "cloud8",
+        vcpu: 8,
+        ram_gb: 16,
+        disk_gb: 200,
+        price_cents: 12990,
+    },
+    PlanDef {
+        id: "cloud16",
+        vcpu: 8,
+        ram_gb: 32,
+        disk_gb: 400,
+        price_cents: 22990,
+    },
 ];
 
 /// Container RAM packs. Buying one grants `ram_mb` of RAM to the account (a
@@ -54,11 +78,36 @@ pub struct ContainerPlanDef {
 }
 
 pub const CONTAINER_PLANS: &[ContainerPlanDef] = &[
-    ContainerPlanDef { id: "c-1gb", name: "1 GB", ram_mb: 1024, price_cents: 599 },
-    ContainerPlanDef { id: "c-2gb", name: "2 GB", ram_mb: 2048, price_cents: 1099 },
-    ContainerPlanDef { id: "c-4gb", name: "4 GB", ram_mb: 4096, price_cents: 2499 },
-    ContainerPlanDef { id: "c-6gb", name: "6 GB", ram_mb: 6144, price_cents: 3499 },
-    ContainerPlanDef { id: "c-8gb", name: "8 GB", ram_mb: 8192, price_cents: 4499 },
+    ContainerPlanDef {
+        id: "c-1gb",
+        name: "1 GB",
+        ram_mb: 1024,
+        price_cents: 599,
+    },
+    ContainerPlanDef {
+        id: "c-2gb",
+        name: "2 GB",
+        ram_mb: 2048,
+        price_cents: 1099,
+    },
+    ContainerPlanDef {
+        id: "c-4gb",
+        name: "4 GB",
+        ram_mb: 4096,
+        price_cents: 2499,
+    },
+    ContainerPlanDef {
+        id: "c-6gb",
+        name: "6 GB",
+        ram_mb: 6144,
+        price_cents: 3499,
+    },
+    ContainerPlanDef {
+        id: "c-8gb",
+        name: "8 GB",
+        ram_mb: 8192,
+        price_cents: 4499,
+    },
 ];
 
 /// The one-time free container RAM grant (MB) an account can claim. Accounts
@@ -78,7 +127,8 @@ pub async fn create_container_subscription(
     plan_id: &str,
     method: Option<&str>,
 ) -> AppResult<(Subscription, Invoice)> {
-    let plan = container_plan(plan_id).ok_or_else(|| AppError::Validation("unknown plan".into()))?;
+    let plan =
+        container_plan(plan_id).ok_or_else(|| AppError::Validation("unknown plan".into()))?;
     if plan.price_cents <= 0 {
         return Err(AppError::Validation("this plan is not purchasable".into()));
     }
@@ -191,9 +241,15 @@ async fn resolve_specs(
     req: &NewSubscription,
 ) -> AppResult<(String, ServerSpecs, i64)> {
     if req.plan == "custom" {
-        let vcpu = req.vcpu.ok_or_else(|| AppError::Validation("vcpu required".into()))?;
-        let ram_gb = req.ram_gb.ok_or_else(|| AppError::Validation("ram required".into()))?;
-        let disk_gb = req.disk_gb.ok_or_else(|| AppError::Validation("disk required".into()))?;
+        let vcpu = req
+            .vcpu
+            .ok_or_else(|| AppError::Validation("vcpu required".into()))?;
+        let ram_gb = req
+            .ram_gb
+            .ok_or_else(|| AppError::Validation("ram required".into()))?;
+        let disk_gb = req
+            .disk_gb
+            .ok_or_else(|| AppError::Validation("disk required".into()))?;
         if vcpu < CUSTOM.vcpu_min
             || vcpu > CUSTOM.vcpu_max
             || ram_gb < CUSTOM.ram_min
@@ -205,7 +261,11 @@ async fn resolve_specs(
         }
         Ok((
             "custom".into(),
-            ServerSpecs { vcpu, ram_gb, disk_gb },
+            ServerSpecs {
+                vcpu,
+                ram_gb,
+                disk_gb,
+            },
             custom_price(vcpu, ram_gb, disk_gb),
         ))
     } else {
@@ -349,7 +409,15 @@ pub async fn create_subscription(
     // 3) First invoice for the opening period.
     let period_start = now;
     let period_end = add_months(now, 1);
-    let invoice = build_invoice(state, user_id, subscription.id.unwrap(), price_cents, period_start, period_end, now);
+    let invoice = build_invoice(
+        state,
+        user_id,
+        subscription.id.unwrap(),
+        price_cents,
+        period_start,
+        period_end,
+        now,
+    );
     let invoice = persist_and_charge(state, user, invoice, &method).await?;
 
     Ok((subscription, invoice))
@@ -516,7 +584,9 @@ pub async fn run_crypto_poll(state: &AppState) -> AppResult<()> {
         pending.push(cursor.deserialize_current()?);
     }
     for inv in pending {
-        let Some(pid) = inv.payment_id.as_ref() else { continue };
+        let Some(pid) = inv.payment_id.as_ref() else {
+            continue;
+        };
         match crypto.payment_status(pid).await {
             Ok(s) if s == "paid" => {
                 if let Err(e) = mark_invoice_paid(state, &inv).await {
@@ -558,11 +628,7 @@ pub fn spawn_crypto_poller(state: AppState) {
 
 /// Create a PIX charge with PagCI and store the payment id + PIX payload on the
 /// invoice. Used for the first invoice, renewals, and "pay again" after expiry.
-pub async fn attach_charge(
-    state: &AppState,
-    user: &User,
-    invoice: &mut Invoice,
-) -> AppResult<()> {
+pub async fn attach_charge(state: &AppState, user: &User, invoice: &mut Invoice) -> AppResult<()> {
     let pagci = state
         .pagci
         .as_ref()
@@ -656,10 +722,23 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
                 doc! { "$set": { "status": "pending_assignment", "updated_at": bson::DateTime::from_chrono(now) }},
             )
             .await;
-        if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+        if let Some(user) = state
+            .db
+            .users()
+            .find_one(doc! { "_id": sub.user_id })
+            .await?
+        {
             email::send_payment_confirmed(state, &user, invoice).await;
         }
-        crate::notify::notify(state, sub.user_id, "dedicated_ip", "Pagamento confirmado", "Seu IP dedicado está sendo encaminhado.", Some("/dashboard/billing".into())).await;
+        crate::notify::notify(
+            state,
+            sub.user_id,
+            "dedicated_ip",
+            "Pagamento confirmado",
+            "Seu IP dedicado está sendo encaminhado.",
+            Some("/dashboard/billing".into()),
+        )
+        .await;
         let invoice_id = invoice.id.unwrap_or_default().to_hex();
         crate::ws::publish(
             state,
@@ -672,12 +751,24 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
 
     // Paid upgrade: apply the new RAM/disk to the live VM, then we're done.
     if sub.plan == "upgrade" {
-        if let Ok(Some(up)) = state.db.upgrades().find_one(doc! { "subscription_id": sub.id }).await {
-            if let Ok(Some(server)) = state.db.servers().find_one(doc! { "_id": up.server_id }).await {
+        if let Ok(Some(up)) = state
+            .db
+            .upgrades()
+            .find_one(doc! { "subscription_id": sub.id })
+            .await
+        {
+            if let Ok(Some(server)) = state
+                .db
+                .servers()
+                .find_one(doc! { "_id": up.server_id })
+                .await
+            {
                 let new_ram = server.specs.ram_gb + up.add_ram_gb;
                 let new_disk = server.specs.disk_gb + up.add_disk_gb;
                 if let (Some(px), Some(vmid)) = (state.proxmox.as_ref(), server.vmid) {
-                    let _ = px.set_resources(vmid, server.specs.vcpu, new_ram * 1024).await;
+                    let _ = px
+                        .set_resources(vmid, server.specs.vcpu, new_ram * 1024)
+                        .await;
                     if up.add_disk_gb > 0 {
                         let _ = px.resize_disk(vmid, "scsi0", new_disk).await;
                     }
@@ -702,22 +793,47 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
                 )
                 .await;
         }
-        if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+        if let Some(user) = state
+            .db
+            .users()
+            .find_one(doc! { "_id": sub.user_id })
+            .await?
+        {
             email::send_payment_confirmed(state, &user, invoice).await;
         }
-        crate::notify::notify(state, sub.user_id, "upgrade", "Upgrade aplicado", "Os novos recursos já estão ativos na sua VPS.", Some("/dashboard/servers".into())).await;
+        crate::notify::notify(
+            state,
+            sub.user_id,
+            "upgrade",
+            "Upgrade aplicado",
+            "Os novos recursos já estão ativos na sua VPS.",
+            Some("/dashboard/servers".into()),
+        )
+        .await;
         let invoice_id = invoice.id.unwrap_or_default().to_hex();
-        crate::ws::publish(state, format!("invoice:{invoice_id}"), "paid", serde_json::to_value(invoice.public()).unwrap_or_default());
+        crate::ws::publish(
+            state,
+            format!("invoice:{invoice_id}"),
+            "paid",
+            serde_json::to_value(invoice.public()).unwrap_or_default(),
+        );
         return Ok(());
     }
 
     // Container RAM pack: no server to provision — the now-active subscription IS
     // the grant, so the RAM is immediately available on the account.
     if container_plan(&sub.plan).is_some() {
-        if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+        if let Some(user) = state
+            .db
+            .users()
+            .find_one(doc! { "_id": sub.user_id })
+            .await?
+        {
             email::send_payment_confirmed(state, &user, invoice).await;
         }
-        let ram_gb = container_plan(&sub.plan).map(|p| p.ram_mb / 1024).unwrap_or(0);
+        let ram_gb = container_plan(&sub.plan)
+            .map(|p| p.ram_mb / 1024)
+            .unwrap_or(0);
         crate::notify::notify(
             state,
             sub.user_id,
@@ -737,8 +853,15 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
         return Ok(());
     }
 
-    let Some(server_id) = sub.server_id else { return Ok(()) };
-    let Some(server) = state.db.servers().find_one(doc! { "_id": server_id }).await? else {
+    let Some(server_id) = sub.server_id else {
+        return Ok(());
+    };
+    let Some(server) = state
+        .db
+        .servers()
+        .find_one(doc! { "_id": server_id })
+        .await?
+    else {
         return Ok(());
     };
 
@@ -750,7 +873,10 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
                 let _ = state
                     .db
                     .servers()
-                    .update_one(doc! { "_id": server_id }, doc! { "$set": { "state": "error" }})
+                    .update_one(
+                        doc! { "_id": server_id },
+                        doc! { "$set": { "state": "error" }},
+                    )
                     .await;
             }
         }
@@ -782,10 +908,23 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
             .await;
     }
 
-    if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+    if let Some(user) = state
+        .db
+        .users()
+        .find_one(doc! { "_id": sub.user_id })
+        .await?
+    {
         email::send_payment_confirmed(state, &user, invoice).await;
     }
-    crate::notify::notify(state, sub.user_id, "payment", "Pagamento confirmado", "Sua assinatura está ativa e sua VPS está sendo preparada.", Some("/dashboard/servers".into())).await;
+    crate::notify::notify(
+        state,
+        sub.user_id,
+        "payment",
+        "Pagamento confirmado",
+        "Sua assinatura está ativa e sua VPS está sendo preparada.",
+        Some("/dashboard/servers".into()),
+    )
+    .await;
 
     // Push to any socket watching this invoice (replaces client polling).
     let invoice_id = invoice.id.unwrap_or_default().to_hex();
@@ -799,7 +938,11 @@ pub async fn mark_invoice_paid(state: &AppState, invoice: &Invoice) -> AppResult
 }
 
 /// Handle a PagCI payment webhook event for a given payment id.
-pub async fn handle_payment_event(state: &AppState, event: &str, payment_id: &str) -> AppResult<()> {
+pub async fn handle_payment_event(
+    state: &AppState,
+    event: &str,
+    payment_id: &str,
+) -> AppResult<()> {
     let invoice = state
         .db
         .invoices()
@@ -885,7 +1028,9 @@ pub async fn cancel_subscription(
 }
 
 async fn suspend_server_of(state: &AppState, sub: &Subscription, new_state: ServerState) {
-    let Some(server_id) = sub.server_id else { return };
+    let Some(server_id) = sub.server_id else {
+        return;
+    };
     let Ok(Some(server)) = state.db.servers().find_one(doc! { "_id": server_id }).await else {
         return;
     };
@@ -1021,12 +1166,25 @@ async fn issue_renewal(state: &AppState, sub: &Subscription, now: DateTime<Utc>)
     if existing.is_some() {
         return Ok(());
     }
-    let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? else {
+    let Some(user) = state
+        .db
+        .users()
+        .find_one(doc! { "_id": sub.user_id })
+        .await?
+    else {
         return Ok(());
     };
     let period_start = sub.current_period_end.unwrap_or(now);
     let period_end = add_months(period_start, 1);
-    let invoice = build_invoice(state, sub.user_id, sub.id.unwrap(), sub.price_cents, period_start, period_end, now);
+    let invoice = build_invoice(
+        state,
+        sub.user_id,
+        sub.id.unwrap(),
+        sub.price_cents,
+        period_start,
+        period_end,
+        now,
+    );
     let method = sub.provider.clone().unwrap_or_else(|| "crypto".into());
     persist_and_charge(state, &user, invoice, &method).await?;
     Ok(())
@@ -1042,7 +1200,12 @@ async fn suspend_for_nonpayment(state: &AppState, invoice: &Invoice) -> AppResul
         return Ok(());
     };
     // Only act on active/past-due/pending subs (ignore cancelled/suspended).
-    if !matches!(sub.status, SubscriptionStatus::Active | SubscriptionStatus::PastDue | SubscriptionStatus::PendingPayment) {
+    if !matches!(
+        sub.status,
+        SubscriptionStatus::Active
+            | SubscriptionStatus::PastDue
+            | SubscriptionStatus::PendingPayment
+    ) {
         return Ok(());
     }
 
@@ -1088,7 +1251,12 @@ async fn suspend_for_nonpayment(state: &AppState, invoice: &Invoice) -> AppResul
         )
         .await?;
     suspend_server_of(state, &sub, ServerState::Suspended).await;
-    if let Some(user) = state.db.users().find_one(doc! { "_id": sub.user_id }).await? {
+    if let Some(user) = state
+        .db
+        .users()
+        .find_one(doc! { "_id": sub.user_id })
+        .await?
+    {
         email::send_subscription_suspended(state, &user, &sub).await;
     }
     Ok(())
@@ -1132,9 +1300,15 @@ pub async fn create_dedicated_ip(
 ) -> AppResult<(crate::models::DedicatedIp, Invoice)> {
     let method = method.unwrap_or_else(|| "crypto".into());
     match method.as_str() {
-        "crypto" if state.crypto.is_none() => return Err(AppError::Unavailable("crypto billing unavailable".into())),
-        "pix" if state.pagci.is_none() => return Err(AppError::Unavailable("pix billing unavailable".into())),
-        "stripe" if state.stripe.is_none() => return Err(AppError::Unavailable("stripe billing unavailable".into())),
+        "crypto" if state.crypto.is_none() => {
+            return Err(AppError::Unavailable("crypto billing unavailable".into()))
+        }
+        "pix" if state.pagci.is_none() => {
+            return Err(AppError::Unavailable("pix billing unavailable".into()))
+        }
+        "stripe" if state.stripe.is_none() => {
+            return Err(AppError::Unavailable("stripe billing unavailable".into()))
+        }
         "crypto" | "pix" | "stripe" => {}
         _ => return Err(AppError::Validation("unknown payment method".into())),
     }
@@ -1150,7 +1324,9 @@ pub async fn create_dedicated_ip(
         .await?
         .is_some()
     {
-        return Err(AppError::Conflict("this VPS already has a dedicated IP".into()));
+        return Err(AppError::Conflict(
+            "this VPS already has a dedicated IP".into(),
+        ));
     }
 
     let mut subscription = Subscription {
@@ -1199,7 +1375,15 @@ pub async fn create_dedicated_ip(
 
     let period_start = now;
     let period_end = add_months(now, 1);
-    let invoice = build_invoice(state, user_id, subscription.id.unwrap(), price_cents, period_start, period_end, now);
+    let invoice = build_invoice(
+        state,
+        user_id,
+        subscription.id.unwrap(),
+        price_cents,
+        period_start,
+        period_end,
+        now,
+    );
     let invoice = persist_and_charge(state, user, invoice, &method).await?;
     Ok((dip, invoice))
 }
@@ -1217,9 +1401,15 @@ pub async fn create_upgrade(
 ) -> AppResult<(crate::models::Upgrade, Invoice)> {
     let method = method.unwrap_or_else(|| "crypto".into());
     match method.as_str() {
-        "crypto" if state.crypto.is_none() => return Err(AppError::Unavailable("crypto billing unavailable".into())),
-        "pix" if state.pagci.is_none() => return Err(AppError::Unavailable("pix billing unavailable".into())),
-        "stripe" if state.stripe.is_none() => return Err(AppError::Unavailable("stripe billing unavailable".into())),
+        "crypto" if state.crypto.is_none() => {
+            return Err(AppError::Unavailable("crypto billing unavailable".into()))
+        }
+        "pix" if state.pagci.is_none() => {
+            return Err(AppError::Unavailable("pix billing unavailable".into()))
+        }
+        "stripe" if state.stripe.is_none() => {
+            return Err(AppError::Unavailable("stripe billing unavailable".into()))
+        }
         "crypto" | "pix" | "stripe" => {}
         _ => return Err(AppError::Validation("unknown payment method".into())),
     }
@@ -1242,7 +1432,9 @@ pub async fn create_upgrade(
         .await?
         .is_some()
     {
-        return Err(AppError::Conflict("an upgrade is already pending for this VPS".into()));
+        return Err(AppError::Conflict(
+            "an upgrade is already pending for this VPS".into(),
+        ));
     }
 
     let mut subscription = Subscription {
@@ -1292,7 +1484,15 @@ pub async fn create_upgrade(
 
     let period_start = now;
     let period_end = add_months(now, 1);
-    let invoice = build_invoice(state, user_id, subscription.id.unwrap(), price_cents, period_start, period_end, now);
+    let invoice = build_invoice(
+        state,
+        user_id,
+        subscription.id.unwrap(),
+        price_cents,
+        period_start,
+        period_end,
+        now,
+    );
     let invoice = persist_and_charge(state, user, invoice, &method).await?;
     Ok((up, invoice))
 }
@@ -1303,7 +1503,9 @@ mod tests {
 
     #[test]
     fn default_plans_present() {
-        assert!(DEFAULT_PLANS.iter().any(|p| p.id == "cloud4" && p.price_cents == 6990));
+        assert!(DEFAULT_PLANS
+            .iter()
+            .any(|p| p.id == "cloud4" && p.price_cents == 6990));
     }
 
     #[test]

@@ -131,7 +131,13 @@ pub struct TermSession {
 fn sanitize_vm_name(name: &str) -> String {
     let mut s: String = name
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     while s.contains("--") {
         s = s.replace("--", "-");
@@ -162,7 +168,10 @@ fn pct(s: &str) -> String {
 
 /// `UPID:node:....` -> node. Used to poll the task on the right node.
 pub fn task_node<'a>(upid: &'a str, fallback: &'a str) -> &'a str {
-    upid.split(':').nth(1).filter(|s| !s.is_empty()).unwrap_or(fallback)
+    upid.split(':')
+        .nth(1)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(fallback)
 }
 
 #[derive(serde::Deserialize)]
@@ -229,7 +238,9 @@ impl ProxmoxClient {
             }
         }
         if self.console_user.is_empty() || self.console_password.is_empty() {
-            return Err(AppError::Unavailable("serial console not configured".into()));
+            return Err(AppError::Unavailable(
+                "serial console not configured".into(),
+            ));
         }
         let res = self
             .http
@@ -249,7 +260,11 @@ impl ProxmoxClient {
             .await
             .map_err(|e| AppError::Internal(format!("pve ticket json: {e}")))?;
         let d = &body["data"];
-        let ticket = d.get("ticket").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let ticket = d
+            .get("ticket")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
         let csrf = d
             .get("CSRFPreventionToken")
             .and_then(|x| x.as_str())
@@ -267,10 +282,7 @@ impl ProxmoxClient {
     /// backend WS proxy needs to bridge the browser to Proxmox's `vncwebsocket`.
     pub async fn term(&self, vmid: i64) -> AppResult<TermSession> {
         let (pveauth, csrf) = self.pve_ticket().await?;
-        let url = format!(
-            "{}/nodes/{}/qemu/{}/termproxy",
-            self.base, self.node, vmid
-        );
+        let url = format!("{}/nodes/{}/qemu/{}/termproxy", self.base, self.node, vmid);
         let res = self
             .http
             .post(&url)
@@ -290,13 +302,28 @@ impl ProxmoxClient {
             .await
             .map_err(|e| AppError::Internal(format!("termproxy json: {e}")))?;
         let d = &body["data"];
-        let user = d.get("user").and_then(|x| x.as_str()).unwrap_or_default().to_string();
-        let ticket = d.get("ticket").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let user = d
+            .get("user")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let ticket = d
+            .get("ticket")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
         let port = d
             .get("port")
-            .and_then(|x| x.as_str().map(str::to_string).or_else(|| x.as_i64().map(|n| n.to_string())))
+            .and_then(|x| {
+                x.as_str()
+                    .map(str::to_string)
+                    .or_else(|| x.as_i64().map(|n| n.to_string()))
+            })
             .unwrap_or_default();
-        let ws = self.web_base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
+        let ws = self
+            .web_base
+            .replacen("https://", "wss://", 1)
+            .replacen("http://", "ws://", 1);
         let ws_url = format!(
             "{}/api2/json/nodes/{}/qemu/{}/vncwebsocket?port={}&vncticket={}",
             ws,
@@ -305,7 +332,12 @@ impl ProxmoxClient {
             port,
             pct(&ticket)
         );
-        Ok(TermSession { user, ticket, pveauth, ws_url })
+        Ok(TermSession {
+            user,
+            ticket,
+            pveauth,
+            ws_url,
+        })
     }
 
     async fn call(
@@ -352,7 +384,9 @@ impl ProxmoxClient {
     pub async fn list_storages(&self) -> AppResult<Vec<StorageStatus>> {
         let path = format!("/nodes/{}/storage", self.node);
         let d = self.call(Method::GET, &path, None).await?;
-        let arr = d.as_array().ok_or_else(|| AppError::Internal("storage list".into()))?;
+        let arr = d
+            .as_array()
+            .ok_or_else(|| AppError::Internal("storage list".into()))?;
         Ok(arr
             .iter()
             .filter_map(|v| serde_json::from_value::<StorageStatus>(v.clone()).ok())
@@ -396,10 +430,7 @@ impl ProxmoxClient {
     /// always larger. Cloud-init's growpart expands the filesystem on first boot.
     pub async fn resize_disk(&self, vmid: i64, disk: &str, size_gb: u32) -> AppResult<()> {
         let path = format!("/nodes/{}/qemu/{}/resize", self.node, vmid);
-        let form = [
-            ("disk", disk.to_string()),
-            ("size", format!("{size_gb}G")),
-        ];
+        let form = [("disk", disk.to_string()), ("size", format!("{size_gb}G"))];
         // Resize returns a task UPID — wait so the disk is fully grown before the
         // VM boots (cloud-init's growpart then expands the filesystem on start).
         let d = self.call(Method::PUT, &path, Some(&form)).await?;
@@ -488,9 +519,18 @@ impl ProxmoxClient {
             .call(Method::GET, &format!("/nodes/{node}/status"), None)
             .await?;
         Ok(NodeStatus {
-            cpus: d.pointer("/cpuinfo/cpus").and_then(|x| x.as_u64()).unwrap_or(0),
-            mem_total: d.pointer("/memory/total").and_then(|x| x.as_u64()).unwrap_or(0),
-            mem_used: d.pointer("/memory/used").and_then(|x| x.as_u64()).unwrap_or(0),
+            cpus: d
+                .pointer("/cpuinfo/cpus")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0),
+            mem_total: d
+                .pointer("/memory/total")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0),
+            mem_used: d
+                .pointer("/memory/used")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0),
             uptime: d.get("uptime").and_then(|x| x.as_u64()).unwrap_or(0),
             loadavg: d
                 .get("loadavg")
@@ -537,13 +577,28 @@ impl ProxmoxClient {
         let d = self
             .call(Method::POST, &path, Some(&[("websocket", "1".to_string())]))
             .await?;
-        let ticket = d.get("ticket").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let ticket = d
+            .get("ticket")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
         let port = d
             .get("port")
-            .and_then(|x| x.as_str().map(str::to_string).or_else(|| x.as_i64().map(|n| n.to_string())))
+            .and_then(|x| {
+                x.as_str()
+                    .map(str::to_string)
+                    .or_else(|| x.as_i64().map(|n| n.to_string()))
+            })
             .unwrap_or_default();
-        let user = d.get("user").and_then(|x| x.as_str()).unwrap_or_default().to_string();
-        let ws = self.web_base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
+        let user = d
+            .get("user")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let ws = self
+            .web_base
+            .replacen("https://", "wss://", 1)
+            .replacen("http://", "ws://", 1);
         let ws_url = format!(
             "{}/api2/json/nodes/{}/qemu/{}/vncwebsocket?port={}&vncticket={}",
             ws,
@@ -552,7 +607,12 @@ impl ProxmoxClient {
             port,
             pct(&ticket)
         );
-        Ok(ConsoleTicket { ticket, port, user, ws_url })
+        Ok(ConsoleTicket {
+            ticket,
+            port,
+            user,
+            ws_url,
+        })
     }
 
     /// Apply cloud-init settings (best-effort; requires a cloud-init template).
@@ -651,7 +711,11 @@ impl ProxmoxClient {
             if s.get("exited").and_then(|e| e.as_i64()).unwrap_or(0) == 1 {
                 let code = s.get("exitcode").and_then(|c| c.as_i64()).unwrap_or(-1);
                 if code != 0 {
-                    let err = s.get("err-data").and_then(|o| o.as_str()).unwrap_or("").to_string();
+                    let err = s
+                        .get("err-data")
+                        .and_then(|o| o.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     return Err(AppError::Internal(format!("chpasswd exit {code}: {err}")));
                 }
                 return Ok(());
@@ -708,8 +772,16 @@ impl ProxmoxClient {
             let s = self.call(Method::GET, &status_path, None).await?;
             if s.get("exited").and_then(|e| e.as_i64()).unwrap_or(0) == 1 {
                 let code = s.get("exitcode").and_then(|c| c.as_i64()).unwrap_or(-1);
-                let out = s.get("out-data").and_then(|o| o.as_str()).unwrap_or("").to_string();
-                let err = s.get("err-data").and_then(|o| o.as_str()).unwrap_or("").to_string();
+                let out = s
+                    .get("out-data")
+                    .and_then(|o| o.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let err = s
+                    .get("err-data")
+                    .and_then(|o| o.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 return Ok((code, out, err));
             }
             tokio::time::sleep(Duration::from_millis(400)).await;
@@ -726,16 +798,16 @@ impl ProxmoxClient {
             pct(file)
         );
         let d = self.call(Method::GET, &path, None).await?;
-        Ok(d.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string())
+        Ok(d.get("content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string())
     }
 
     /// Write a (text) file to the guest (plain content; Proxmox base64-encodes it).
     pub async fn agent_file_write(&self, vmid: i64, file: &str, content: &str) -> AppResult<()> {
         let path = format!("/nodes/{}/qemu/{}/agent/file-write", self.node, vmid);
-        let form = [
-            ("file", file.to_string()),
-            ("content", content.to_string()),
-        ];
+        let form = [("file", file.to_string()), ("content", content.to_string())];
         self.call(Method::POST, &path, Some(&form)).await?;
         Ok(())
     }

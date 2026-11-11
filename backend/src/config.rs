@@ -234,7 +234,9 @@ impl Config {
             proxmox_node: opt("PROXMOX_NODE", "pve"),
             proxmox_template_vmid: parse("PROXMOX_TEMPLATE_VMID", 9000i64)?,
             proxmox_storage: opt("PROXMOX_STORAGE", "local-lvm"),
-            storage_sell_threshold: opt("STORAGE_SELL_THRESHOLD", "0.8").parse::<f64>().unwrap_or(0.8),
+            storage_sell_threshold: opt("STORAGE_SELL_THRESHOLD", "0.8")
+                .parse::<f64>()
+                .unwrap_or(0.8),
             storage_pool: opt("STORAGE_POOL", "")
                 .split(',')
                 .map(|s| s.trim().to_string())

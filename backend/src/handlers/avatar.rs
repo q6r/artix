@@ -22,7 +22,11 @@ const MAX_AVATAR_BYTES: usize = 4 * 1024 * 1024; // 4 MB
 
 fn allowed(url: &str) -> bool {
     match reqwest::Url::parse(url) {
-        Ok(u) => u.scheme() == "https" && u.host_str().is_some_and(|h| ALLOWED_AVATAR_HOSTS.contains(&h)),
+        Ok(u) => {
+            u.scheme() == "https"
+                && u.host_str()
+                    .is_some_and(|h| ALLOWED_AVATAR_HOSTS.contains(&h))
+        }
         Err(_) => false,
     }
 }
@@ -72,10 +76,7 @@ pub async fn avatar(State(state): State<AppState>, Path(id): Path<String>) -> Re
         Ok(bytes) if bytes.len() <= MAX_AVATAR_BYTES => (
             [
                 (header::CONTENT_TYPE, content_type),
-                (
-                    header::CACHE_CONTROL,
-                    "public, max-age=21600".to_string(),
-                ),
+                (header::CACHE_CONTROL, "public, max-age=21600".to_string()),
             ],
             bytes,
         )

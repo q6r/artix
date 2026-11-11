@@ -64,7 +64,9 @@ pub async fn provision(state: &AppState, server: &Server) -> AppResult<()> {
         .await?
         .ok_or_else(|| AppError::Unavailable("sem capacidade de armazenamento".into()))?;
     let vmid = px.next_id().await?;
-    let upid = px.clone_template(template, vmid, &server.name, &storage).await?;
+    let upid = px
+        .clone_template(template, vmid, &server.name, &storage)
+        .await?;
     px.wait_task(&upid).await?;
     px.set_resources(vmid, server.specs.vcpu, server.specs.ram_gb * 1024)
         .await?;
@@ -168,14 +170,20 @@ pub async fn create(
     let plan = req.plan.clone();
 
     // Direct provision (admin/free path): clone -> size -> cloud-init -> start.
-    let template = state.cfg.os_templates.get(&os).copied().unwrap_or(px.template_vmid);
+    let template = state
+        .cfg
+        .os_templates
+        .get(&os)
+        .copied()
+        .unwrap_or(px.template_vmid);
     let storage = crate::storage::pick(&state, specs.disk_gb)
         .await?
         .ok_or_else(|| AppError::Unavailable("sem capacidade de armazenamento".into()))?;
     let vmid = px.next_id().await?;
     let upid = px.clone_template(template, vmid, &name, &storage).await?;
     px.wait_task(&upid).await?;
-    px.set_resources(vmid, specs.vcpu, specs.ram_gb * 1024).await?;
+    px.set_resources(vmid, specs.vcpu, specs.ram_gb * 1024)
+        .await?;
     if let Err(e) = px.resize_disk(vmid, "scsi0", specs.disk_gb).await {
         tracing::warn!(vmid, error = %e, "disk resize failed");
     }
@@ -222,7 +230,11 @@ pub async fn create(
     let inserted = state.db.servers().insert_one(&server).await?;
     let mut created = server;
     created.id = inserted.inserted_id.as_object_id();
-    tokio::spawn(crate::frp::provision_tunnel(state.clone(), vmid, created.id));
+    tokio::spawn(crate::frp::provision_tunnel(
+        state.clone(),
+        vmid,
+        created.id,
+    ));
     Ok(Json(created.public()))
 }
 
@@ -523,7 +535,9 @@ pub async fn reset_root_password(
             }},
         )
         .await?;
-    Ok(Json(serde_json::json!({ "ok": true, "password": password })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "password": password }),
+    ))
 }
 
 pub async fn power(
@@ -565,8 +579,16 @@ pub async fn delete(
 
     // A never-provisioned (pending payment) server has no VM — just drop it.
     let Some(vmid) = server.vmid else {
-        let _ = state.db.server_grants().delete_many(doc! { "server_id": server.id }).await;
-        state.db.servers().delete_one(doc! { "_id": server.id }).await?;
+        let _ = state
+            .db
+            .server_grants()
+            .delete_many(doc! { "server_id": server.id })
+            .await;
+        state
+            .db
+            .servers()
+            .delete_one(doc! { "_id": server.id })
+            .await?;
         return Ok(Json(serde_json::json!({ "ok": true })));
     };
     let px = state
@@ -590,8 +612,16 @@ pub async fn delete(
     let upid = px.delete(vmid).await?;
     let _ = px.wait_task(&upid).await;
 
-    let _ = state.db.server_grants().delete_many(doc! { "server_id": server.id }).await;
-    state.db.servers().delete_one(doc! { "_id": server.id }).await?;
+    let _ = state
+        .db
+        .server_grants()
+        .delete_many(doc! { "server_id": server.id })
+        .await;
+    state
+        .db
+        .servers()
+        .delete_one(doc! { "_id": server.id })
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -629,7 +659,10 @@ mod tests {
 
     #[test]
     fn default_plan_specs() {
-        let s = billing::DEFAULT_PLANS.iter().find(|p| p.id == "cloud4").unwrap();
+        let s = billing::DEFAULT_PLANS
+            .iter()
+            .find(|p| p.id == "cloud4")
+            .unwrap();
         assert_eq!(s.vcpu, 4);
         assert_eq!(s.ram_gb, 8);
     }

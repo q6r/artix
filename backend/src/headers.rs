@@ -10,11 +10,7 @@ use axum::{
 
 use crate::state::AppState;
 
-pub async fn security_headers(
-    State(state): State<AppState>,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn security_headers(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let mut res = next.run(req).await;
     let h = res.headers_mut();
 
@@ -28,8 +24,16 @@ pub async fn security_headers(
     set(h, "cross-origin-opener-policy", "same-origin");
     set(h, "cross-origin-resource-policy", "same-site");
     // This is a JSON API, so the strictest CSP is appropriate.
-    set(h, "content-security-policy", "default-src 'none'; frame-ancestors 'none'");
-    set(h, "permissions-policy", "geolocation=(), microphone=(), camera=()");
+    set(
+        h,
+        "content-security-policy",
+        "default-src 'none'; frame-ancestors 'none'",
+    );
+    set(
+        h,
+        "permissions-policy",
+        "geolocation=(), microphone=(), camera=()",
+    );
 
     if state.cfg.env.is_production() {
         set(

@@ -2,7 +2,9 @@
 
 use axum::{extract::State, Json};
 
-use crate::{authn::AuthUser, error::AppResult, permissions::perm, state::AppState, storage::StorageReport};
+use crate::{
+    authn::AuthUser, error::AppResult, permissions::perm, state::AppState, storage::StorageReport,
+};
 
 pub async fn list(
     State(state): State<AppState>,

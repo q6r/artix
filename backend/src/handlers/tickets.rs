@@ -81,7 +81,12 @@ pub async fn create(
         return Err(AppError::Validation("invalid message".into()));
     }
     // Validate the category against the admin-managed list, if provided.
-    let category = match req.category.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let category = match req
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         Some(slug) => {
             state
                 .db
@@ -189,7 +194,9 @@ async fn enrich(state: &AppState, ticket: &Ticket) -> AppResult<TicketPublic> {
             .find(doc! { "_id": { "$in": ticket.members.clone() } })
             .await?;
         while cursor.advance().await? {
-            public.members.push(UserRef::of(&cursor.deserialize_current()?));
+            public
+                .members
+                .push(UserRef::of(&cursor.deserialize_current()?));
         }
     }
     Ok(public)

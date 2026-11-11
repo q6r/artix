@@ -201,10 +201,7 @@ impl AuthUser {
 }
 
 /// Union of all permissions granted by the user's roles.
-pub async fn resolve_permissions(
-    state: &AppState,
-    user: &User,
-) -> Result<Vec<String>, AppError> {
+pub async fn resolve_permissions(state: &AppState, user: &User) -> Result<Vec<String>, AppError> {
     if user.role_ids.is_empty() {
         return Ok(Vec::new());
     }

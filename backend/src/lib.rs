@@ -10,10 +10,9 @@ pub mod email;
 pub mod error;
 pub mod frp;
 pub mod handlers;
-pub mod stripe;
-pub mod notify;
 pub mod headers;
 pub mod models;
+pub mod notify;
 pub mod oauth;
 pub mod pagci;
 pub mod permissions;
@@ -23,6 +22,7 @@ pub mod secretbox;
 pub mod security;
 pub mod state;
 pub mod storage;
+pub mod stripe;
 pub mod ws;
 
 use axum::{
@@ -98,7 +98,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/refresh", post(handlers::auth::refresh))
         .route("/logout", post(handlers::auth::logout))
         .route("/logout-all", post(handlers::auth::logout_all))
-        .route("/me", get(handlers::auth::me).patch(handlers::auth::update_profile))
+        .route(
+            "/me",
+            get(handlers::auth::me).patch(handlers::auth::update_profile),
+        )
         .route("/verify-backup-code", post(handlers::backup::verify))
         .route(
             "/backup-codes",
@@ -107,7 +110,10 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(handlers::backup::disable),
         )
         .route("/verify-email", post(handlers::auth::verify_email))
-        .route("/resend-verification", post(handlers::auth::resend_verification))
+        .route(
+            "/resend-verification",
+            post(handlers::auth::resend_verification),
+        )
         .route("/change-email", post(handlers::auth::change_email))
         .route(
             "/confirm-email-change",
@@ -133,9 +139,15 @@ pub fn build_router(state: AppState) -> Router {
         .route("/users/:id/ban", post(handlers::admin::ban_user))
         .route("/users/:id/unban", post(handlers::admin::unban_user))
         .route("/users/:id/suspend", post(handlers::admin::suspend_user))
-        .route("/users/:id/unsuspend", post(handlers::admin::unsuspend_user))
+        .route(
+            "/users/:id/unsuspend",
+            post(handlers::admin::unsuspend_user),
+        )
         .route("/users/:id/roles", post(handlers::admin::assign_role))
-        .route("/users/:id/roles/:role_id", delete(handlers::admin::remove_role))
+        .route(
+            "/users/:id/roles/:role_id",
+            delete(handlers::admin::remove_role),
+        )
         .route(
             "/roles",
             get(handlers::admin::list_roles).post(handlers::admin::create_role),
@@ -145,7 +157,10 @@ pub fn build_router(state: AppState) -> Router {
             delete(handlers::admin::delete_role).patch(handlers::admin::update_role),
         )
         .route("/audit-logs", get(handlers::admin::list_audit_logs))
-        .route("/security-events", get(handlers::admin::list_security_events))
+        .route(
+            "/security-events",
+            get(handlers::admin::list_security_events),
+        )
         .route("/nodes", get(handlers::admin::list_nodes))
         .route("/nodes/:node", get(handlers::admin::get_node))
         .route(
@@ -160,14 +175,22 @@ pub fn build_router(state: AppState) -> Router {
         .route("/relays/:name", patch(handlers::admin_relays::set_enabled))
         .route("/storage", get(handlers::admin_storage::list))
         .route("/dedicated-ips", get(handlers::dedicated_ip::admin_list))
-        .route("/dedicated-ips/:id", patch(handlers::dedicated_ip::admin_assign))
-        .route("/subscriptions", get(handlers::billing::admin_list_subscriptions))
+        .route(
+            "/dedicated-ips/:id",
+            patch(handlers::dedicated_ip::admin_assign),
+        )
+        .route(
+            "/subscriptions",
+            get(handlers::billing::admin_list_subscriptions),
+        )
         .route("/invoices", get(handlers::billing::admin_list_invoices))
-        .route("/invoices/:id/mark-paid", post(handlers::billing::admin_mark_paid))
+        .route(
+            "/invoices/:id/mark-paid",
+            post(handlers::billing::admin_mark_paid),
+        )
         .route(
             "/servers",
-            get(handlers::admin_servers::list_servers)
-                .post(handlers::admin_servers::create_server),
+            get(handlers::admin_servers::list_servers).post(handlers::admin_servers::create_server),
         )
         .route(
             "/servers/:id",
@@ -192,8 +215,14 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/tickets", get(handlers::tickets::admin_list))
         .route("/tickets/:id", get(handlers::tickets::admin_get))
-        .route("/tickets/:id/messages", post(handlers::tickets::admin_reply))
-        .route("/tickets/:id/status", patch(handlers::tickets::admin_set_status))
+        .route(
+            "/tickets/:id/messages",
+            post(handlers::tickets::admin_reply),
+        )
+        .route(
+            "/tickets/:id/status",
+            patch(handlers::tickets::admin_set_status),
+        )
         .route(
             "/ticket-categories",
             post(handlers::tickets::create_category),
@@ -260,10 +289,7 @@ pub fn build_router(state: AppState) -> Router {
             "/servers/:id/root-password",
             post(handlers::servers::reset_root_password),
         )
-        .route(
-            "/servers/:id/reinstall",
-            post(handlers::servers::reinstall),
-        )
+        .route("/servers/:id/reinstall", post(handlers::servers::reinstall))
         .route("/servers/:id/metrics", get(handlers::servers::metrics))
         .route("/servers/:id/console", get(handlers::servers::console))
         // VPS file manager + command console (over the guest agent).
@@ -324,8 +350,14 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/containers/purchase", post(handlers::containers::purchase))
         .route("/containers/ram", get(handlers::containers::ram_balance))
-        .route("/containers/claim-free", post(handlers::containers::claim_free))
-        .route("/containers/:id/files", get(handlers::containers::list_files))
+        .route(
+            "/containers/claim-free",
+            post(handlers::containers::claim_free),
+        )
+        .route(
+            "/containers/:id/files",
+            get(handlers::containers::list_files),
+        )
         .route(
             "/containers/:id/file",
             get(handlers::containers::read_file).put(handlers::containers::write_file),
@@ -398,10 +430,7 @@ pub fn build_router(state: AppState) -> Router {
             "/containers/:id/reprovision",
             post(handlers::containers::reprovision_mc),
         )
-        .route(
-            "/containers/:id/ram",
-            put(handlers::containers::set_mc_ram),
-        )
+        .route("/containers/:id/ram", put(handlers::containers::set_mc_ram))
         .route(
             "/containers/:id/voice",
             put(handlers::containers::set_voice),
@@ -419,14 +448,20 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::containers::get_community_chat)
                 .post(handlers::containers::post_community_chat),
         )
-        .route("/account/github/repos", get(handlers::account::github_repos))
+        .route(
+            "/account/github/repos",
+            get(handlers::account::github_repos),
+        )
         .route(
             "/keys",
             get(handlers::keys::list).post(handlers::keys::create),
         )
         .route("/keys/:id", delete(handlers::keys::revoke))
         .route("/notifications", get(handlers::notifications::list))
-        .route("/notifications/read", post(handlers::notifications::mark_read))
+        .route(
+            "/notifications/read",
+            post(handlers::notifications::mark_read),
+        )
         .nest("/v1", dev_routes)
         // Billing (subscriptions + invoices + PIX).
         .route("/billing/plans", get(handlers::billing::list_plans))

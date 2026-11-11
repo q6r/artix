@@ -104,7 +104,11 @@ pub async fn admin_list(
             .find_one(doc! { "_id": d.server_id })
             .await?
             .map(|s| s.name);
-        out.push(DedicatedIpAdminView { ip: d.public(), owner, server_name });
+        out.push(DedicatedIpAdminView {
+            ip: d.public(),
+            owner,
+            server_name,
+        });
     }
     Ok(Json(out))
 }

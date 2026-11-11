@@ -120,8 +120,12 @@ pub async fn unlink(
                 }
             }
             for (sid, repo, hid) in targets {
-                crate::handlers::containers::disable_auto_deploy(&state, sid, Some((&repo, hid, &token)))
-                    .await;
+                crate::handlers::containers::disable_auto_deploy(
+                    &state,
+                    sid,
+                    Some((&repo, hid, &token)),
+                )
+                .await;
             }
         }
         let _ = state
@@ -163,8 +167,12 @@ async fn callback_inner(
     let code = q.code.ok_or(AppError::Unauthorized)?;
     let raw_state = q.state.ok_or(AppError::Unauthorized)?;
 
-    let st = oauth::verify_state(&state.cfg.auth_token_secret, &raw_state, Utc::now().timestamp())
-        .ok_or(AppError::Unauthorized)?;
+    let st = oauth::verify_state(
+        &state.cfg.auth_token_secret,
+        &raw_state,
+        Utc::now().timestamp(),
+    )
+    .ok_or(AppError::Unauthorized)?;
     if st.provider != provider.as_str() {
         return Err(AppError::Unauthorized);
     }
@@ -264,8 +272,13 @@ pub async fn exchange(
         return Err(AppError::Forbidden);
     }
 
-    let (access, refresh) =
-        issue_session(&state, ex.user_id, client_ip(&headers), user_agent(&headers)).await?;
+    let (access, refresh) = issue_session(
+        &state,
+        ex.user_id,
+        client_ip(&headers),
+        user_agent(&headers),
+    )
+    .await?;
     Ok(Json(TokenResponse {
         access_token: access,
         refresh_token: refresh,
@@ -285,14 +298,18 @@ async fn resolve_user(
     if let Some(acc) = state
         .db
         .oauth_accounts()
-        .find_one(doc! { "provider": provider.as_str(), "provider_user_id": &info.provider_user_id })
+        .find_one(
+            doc! { "provider": provider.as_str(), "provider_user_id": &info.provider_user_id },
+        )
         .await?
     {
         if st.intent == "link" {
             // Linking a provider identity that belongs to a different user.
             let uid = st.uid.as_deref().and_then(|u| ObjectId::parse_str(u).ok());
             if uid != Some(acc.user_id) {
-                return Err(AppError::Conflict("provider already linked to another account".into()));
+                return Err(AppError::Conflict(
+                    "provider already linked to another account".into(),
+                ));
             }
             // Re-linking refreshes an expired / newly repo-scoped token.
             store_github_token(state, acc.user_id, provider, info).await?;
@@ -308,7 +325,13 @@ async fn resolve_user(
             .as_deref()
             .and_then(|u| ObjectId::parse_str(u).ok())
             .ok_or(AppError::Unauthorized)?;
-        if state.db.users().find_one(doc! { "_id": uid }).await?.is_none() {
+        if state
+            .db
+            .users()
+            .find_one(doc! { "_id": uid })
+            .await?
+            .is_none()
+        {
             return Err(AppError::Unauthorized);
         }
         create_link(state, uid, provider, info).await?;
@@ -336,7 +359,10 @@ async fn resolve_user(
         crate::email::send_security_alert(
             state,
             &u.email,
-            &format!("Sua conta foi vinculada ao login via {}.", provider.as_str()),
+            &format!(
+                "Sua conta foi vinculada ao login via {}.",
+                provider.as_str()
+            ),
         )
         .await;
         return Ok((uid, false));
@@ -413,12 +439,17 @@ async fn create_link(
         email: info.email.clone(),
         created_at: Utc::now(),
     };
-    state.db.oauth_accounts().insert_one(&acc).await.map_err(|e| {
-        if e.to_string().contains("E11000") {
-            AppError::Conflict("provider already linked".into())
-        } else {
-            AppError::Db(e)
-        }
-    })?;
+    state
+        .db
+        .oauth_accounts()
+        .insert_one(&acc)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("E11000") {
+                AppError::Conflict("provider already linked".into())
+            } else {
+                AppError::Db(e)
+            }
+        })?;
     Ok(())
 }

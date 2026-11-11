@@ -12,9 +12,7 @@
 //! - audit/security created_at   -> time-range queries for the admin panel.
 
 use bson::doc;
-use mongodb::{
-    options::IndexOptions, results::CreateIndexResult, Client, Database, IndexModel,
-};
+use mongodb::{options::IndexOptions, results::CreateIndexResult, Client, Database, IndexModel};
 
 use crate::config::Config;
 use crate::models::*;
@@ -36,7 +34,9 @@ async fn unique(
         .keys(keys)
         .options(IndexOptions::builder().unique(true).build())
         .build();
-    db.collection::<bson::Document>(coll).create_index(model).await
+    db.collection::<bson::Document>(coll)
+        .create_index(model)
+        .await
 }
 
 async fn index(
@@ -58,7 +58,9 @@ async fn ttl(db: &Database, coll: &str, field: &str) -> mongodb::error::Result<C
                 .build(),
         )
         .build();
-    db.collection::<bson::Document>(coll).create_index(model).await
+    db.collection::<bson::Document>(coll)
+        .create_index(model)
+        .await
 }
 
 /// Unique only over documents that actually have the field (sparse), so many
@@ -72,13 +74,20 @@ async fn unique_sparse(
         .keys(keys)
         .options(IndexOptions::builder().unique(true).sparse(true).build())
         .build();
-    db.collection::<bson::Document>(coll).create_index(model).await
+    db.collection::<bson::Document>(coll)
+        .create_index(model)
+        .await
 }
 
 pub async fn ensure_indexes(db: &Database) -> mongodb::error::Result<()> {
     unique(db, "users", doc! { "email": 1 }).await?;
 
-    unique(db, "oauth_accounts", doc! { "provider": 1, "provider_user_id": 1 }).await?;
+    unique(
+        db,
+        "oauth_accounts",
+        doc! { "provider": 1, "provider_user_id": 1 },
+    )
+    .await?;
     index(db, "oauth_accounts", doc! { "user_id": 1 }).await?;
 
     unique(db, "sessions", doc! { "refresh_hash": 1 }).await?;
@@ -92,10 +101,20 @@ pub async fn ensure_indexes(db: &Database) -> mongodb::error::Result<()> {
     unique(db, "roles", doc! { "name": 1 }).await?;
 
     index(db, "admin_audit_logs", doc! { "created_at": -1 }).await?;
-    index(db, "admin_audit_logs", doc! { "actor_id": 1, "created_at": -1 }).await?;
+    index(
+        db,
+        "admin_audit_logs",
+        doc! { "actor_id": 1, "created_at": -1 },
+    )
+    .await?;
 
     index(db, "security_events", doc! { "created_at": -1 }).await?;
-    index(db, "security_events", doc! { "user_id": 1, "created_at": -1 }).await?;
+    index(
+        db,
+        "security_events",
+        doc! { "user_id": 1, "created_at": -1 },
+    )
+    .await?;
 
     unique_sparse(db, "servers", doc! { "vmid": 1 }).await?;
     // Prevents two VPS from sharing a relay host+port (cross-tenant SSH).
@@ -109,7 +128,12 @@ pub async fn ensure_indexes(db: &Database) -> mongodb::error::Result<()> {
     ttl(db, "api_keys", "expires_at").await?;
 
     index(db, "subscriptions", doc! { "user_id": 1 }).await?;
-    index(db, "subscriptions", doc! { "status": 1, "current_period_end": 1 }).await?;
+    index(
+        db,
+        "subscriptions",
+        doc! { "status": 1, "current_period_end": 1 },
+    )
+    .await?;
     index(db, "subscriptions", doc! { "server_id": 1 }).await?;
 
     unique(db, "invoices", doc! { "number": 1 }).await?;
@@ -141,7 +165,12 @@ pub async fn ensure_indexes(db: &Database) -> mongodb::error::Result<()> {
 
     index(db, "tickets", doc! { "user_id": 1, "updated_at": -1 }).await?;
     index(db, "tickets", doc! { "status": 1, "updated_at": -1 }).await?;
-    index(db, "ticket_messages", doc! { "ticket_id": 1, "created_at": 1 }).await?;
+    index(
+        db,
+        "ticket_messages",
+        doc! { "ticket_id": 1, "created_at": 1 },
+    )
+    .await?;
 
     index(db, "chat_messages", doc! { "channel": 1, "created_at": -1 }).await?;
 

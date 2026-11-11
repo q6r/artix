@@ -2,8 +2,8 @@ pub mod account;
 pub mod admin;
 pub mod admin_plans;
 pub mod admin_relays;
-pub mod admin_storage;
 pub mod admin_servers;
+pub mod admin_storage;
 pub mod announcements;
 pub mod auth;
 pub mod avatar;
@@ -15,14 +15,14 @@ pub mod dev;
 pub mod health;
 pub mod keys;
 pub mod notifications;
-pub mod upgrade;
 pub mod oauth;
 pub mod orgs;
 pub mod servers;
 pub mod sessions;
 pub mod term;
-pub mod vm_agent;
 pub mod tickets;
+pub mod upgrade;
+pub mod vm_agent;
 pub mod webhooks;
 
 use axum::{

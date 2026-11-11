@@ -170,16 +170,59 @@ pub(crate) async fn validate_subdomain(
         return Ok(None);
     }
     if raw.len() < 3 || raw.len() > 63 {
-        return Err(AppError::Validation("subdomain must be 3–63 characters".into()));
+        return Err(AppError::Validation(
+            "subdomain must be 3–63 characters".into(),
+        ));
     }
     // Sites live at <sub>.artix.cloud (same zone as the platform), so reserve
     // system/first-party labels to prevent hijack/confusion.
     const RESERVED: &[&str] = &[
-        "www", "app", "api", "admin", "pro", "mail", "smtp", "imap", "pop", "ns", "ns1",
-        "ns2", "dns", "ftp", "cdn", "static", "assets", "cpanel", "webmail", "dashboard",
-        "panel", "status", "blog", "docs", "help", "support", "billing", "pay", "checkout",
-        "auth", "login", "oauth", "webhooks", "agent", "traefik", "grafana", "kibana",
-        "vpn", "git", "artix", "apps", "test", "staging", "dev", "prod", "root",
+        "www",
+        "app",
+        "api",
+        "admin",
+        "pro",
+        "mail",
+        "smtp",
+        "imap",
+        "pop",
+        "ns",
+        "ns1",
+        "ns2",
+        "dns",
+        "ftp",
+        "cdn",
+        "static",
+        "assets",
+        "cpanel",
+        "webmail",
+        "dashboard",
+        "panel",
+        "status",
+        "blog",
+        "docs",
+        "help",
+        "support",
+        "billing",
+        "pay",
+        "checkout",
+        "auth",
+        "login",
+        "oauth",
+        "webhooks",
+        "agent",
+        "traefik",
+        "grafana",
+        "kibana",
+        "vpn",
+        "git",
+        "artix",
+        "apps",
+        "test",
+        "staging",
+        "dev",
+        "prod",
+        "root",
     ];
     if RESERVED.contains(&raw.as_str()) {
         return Err(AppError::Conflict("this subdomain is reserved".into()));
@@ -609,7 +652,9 @@ async fn provision_minecraft(state: AppState, server: Server, ram_mb: i64) {
             .await
             .map(|l| l.logs.to_lowercase())
             .unwrap_or_default();
-        if logs.contains("done (") || logs.contains("for help, type") || logs.contains("server started")
+        if logs.contains("done (")
+            || logs.contains("for help, type")
+            || logs.contains("server started")
         {
             mc_mark_running(&state, sid).await;
             return;
@@ -828,7 +873,10 @@ pub async fn list(
         .await?;
     while members.advance().await? {
         let m = members.deserialize_current()?;
-        if matches!(m.role, crate::models::OrgRole::Owner | crate::models::OrgRole::Admin) {
+        if matches!(
+            m.role,
+            crate::models::OrgRole::Owner | crate::models::OrgRole::Admin
+        ) {
             org_ids.push(m.org_id);
         }
     }
@@ -969,7 +1017,15 @@ pub async fn deploy(
     // ram_cap is authoritative — the agent clamps the .artix RAM to it so a user
     // can't request more than their plan allows.
     let dep = match ag
-        .deploy(&app_id, zip, env_json, cpus, ram_cap, subdomain.as_deref(), custom_domain.as_deref())
+        .deploy(
+            &app_id,
+            zip,
+            env_json,
+            cpus,
+            ram_cap,
+            subdomain.as_deref(),
+            custom_domain.as_deref(),
+        )
         .await
     {
         Ok(d) => d,
@@ -1127,7 +1183,9 @@ pub(crate) async fn record_deploy(
 async fn delete_github_hook(state: &AppState, repo: &str, hook_id: i64, token: &str) {
     let _ = state
         .http
-        .delete(format!("https://api.github.com/repos/{repo}/hooks/{hook_id}"))
+        .delete(format!(
+            "https://api.github.com/repos/{repo}/hooks/{hook_id}"
+        ))
         .bearer_auth(token)
         .header(reqwest::header::USER_AGENT, "ArtixCloud")
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
@@ -1177,7 +1235,8 @@ async fn ensure_webhook(state: &AppState, sid: ObjectId, token: &str, repo: &str
         }
     }
     let secret_plain = hex::encode((0..32).map(|_| rand::random::<u8>()).collect::<Vec<u8>>());
-    let sealed = match crate::secretbox::seal(&state.cfg.auth_token_secret, secret_plain.as_bytes()) {
+    let sealed = match crate::secretbox::seal(&state.cfg.auth_token_secret, secret_plain.as_bytes())
+    {
         Ok(s) => s,
         Err(_) => return,
     };
@@ -1251,7 +1310,15 @@ pub(crate) async fn run_github_deploy(
         return Err(AppError::Conflict("a deploy is already in progress".into()));
     }
     let out = run_github_deploy_inner(
-        state, server, token, repo, requested_ref, actor_id, actor_name, source, register_hook,
+        state,
+        server,
+        token,
+        repo,
+        requested_ref,
+        actor_id,
+        actor_name,
+        source,
+        register_hook,
     )
     .await;
     let _ = state
@@ -1290,7 +1357,9 @@ async fn run_github_deploy_inner(
     let sid = server.id.unwrap();
     let repo = repo.trim();
     if !valid_repo(repo) {
-        return Err(AppError::Validation("invalid repo (expected owner/name)".into()));
+        return Err(AppError::Validation(
+            "invalid repo (expected owner/name)".into(),
+        ));
     }
     let ghget = |url: String| {
         state
@@ -1353,7 +1422,19 @@ async fn run_github_deploy_inner(
         Ok(r) if r.status().is_success() => r,
         _ => {
             let e = "could not download the repo (check the repo/branch and access)";
-            record_deploy(state, sid, actor_id, actor_name, source, Some(repo), Some(&git_ref), commit.as_deref(), "failed", Some(e)).await;
+            record_deploy(
+                state,
+                sid,
+                actor_id,
+                actor_name,
+                source,
+                Some(repo),
+                Some(&git_ref),
+                commit.as_deref(),
+                "failed",
+                Some(e),
+            )
+            .await;
             return Err(AppError::Validation(e.into()));
         }
     };
@@ -1366,12 +1447,32 @@ async fn run_github_deploy_inner(
     }
 
     let dep = match agent(state)?
-        .deploy(&app_id, zip.to_vec(), env_json, 0.5, ram_cap, subdomain.as_deref(), custom_domain.as_deref())
+        .deploy(
+            &app_id,
+            zip.to_vec(),
+            env_json,
+            0.5,
+            ram_cap,
+            subdomain.as_deref(),
+            custom_domain.as_deref(),
+        )
         .await
     {
         Ok(d) => d,
         Err(e) => {
-            record_deploy(state, sid, actor_id, actor_name, source, Some(repo), Some(&git_ref), commit.as_deref(), "failed", Some(&e.user_message())).await;
+            record_deploy(
+                state,
+                sid,
+                actor_id,
+                actor_name,
+                source,
+                Some(repo),
+                Some(&git_ref),
+                commit.as_deref(),
+                "failed",
+                Some(&e.user_message()),
+            )
+            .await;
             return Err(e);
         }
     };
@@ -1385,7 +1486,19 @@ async fn run_github_deploy_inner(
             doc! { "$set": { "container.github_repo": repo, "container.github_ref": &git_ref }},
         )
         .await;
-    record_deploy(state, sid, actor_id, actor_name, source, Some(repo), Some(&git_ref), commit.as_deref(), "success", None).await;
+    record_deploy(
+        state,
+        sid,
+        actor_id,
+        actor_name,
+        source,
+        Some(repo),
+        Some(&git_ref),
+        commit.as_deref(),
+        "success",
+        None,
+    )
+    .await;
     crate::ws::publish(
         state,
         format!("user:{}", server.user_id.to_hex()),
@@ -1484,7 +1597,10 @@ async fn doh(http: &reqwest::Client, name: &str, typ: &str) -> Vec<(u64, String)
                 .filter_map(|x| {
                     Some((
                         x.get("type")?.as_u64()?,
-                        x.get("data")?.as_str()?.trim_end_matches('.').to_lowercase(),
+                        x.get("data")?
+                            .as_str()?
+                            .trim_end_matches('.')
+                            .to_lowercase(),
                     ))
                 })
                 .collect()
@@ -1584,7 +1700,9 @@ pub async fn set_domain(
     let taken = state
         .db
         .servers()
-        .count_documents(doc! { "type": 1, "container.custom_domain": &domain, "_id": { "$ne": sid } })
+        .count_documents(
+            doc! { "type": 1, "container.custom_domain": &domain, "_id": { "$ne": sid } },
+        )
         .await?;
     if taken > 0 {
         return Err(AppError::Conflict(
@@ -1782,12 +1900,19 @@ pub async fn mc_players(
                 .collect()
         })
         .unwrap_or_default();
-    let sessions = parse_sessions(&ag.logs(&c.app_id, 2000).await.map(|l| l.logs).unwrap_or_default());
+    let sessions = parse_sessions(
+        &ag.logs(&c.app_id, 2000)
+            .await
+            .map(|l| l.logs)
+            .unwrap_or_default(),
+    );
     let players: Vec<_> = names
         .iter()
         .map(|n| serde_json::json!({ "name": n, "since": sessions.get(n).cloned() }))
         .collect();
-    Ok(Json(serde_json::json!({ "online": online, "max": max, "players": players })))
+    Ok(Json(
+        serde_json::json!({ "online": online, "max": max, "players": players }),
+    ))
 }
 
 /// Where a Minecraft server loads add-ons: `plugins` (Bukkit-based) or `mods`
@@ -1844,7 +1969,9 @@ pub async fn upload_plugin(
     if !filename.to_lowercase().ends_with(".jar") {
         return Err(AppError::Validation("only .jar files".into()));
     }
-    agent(&state)?.upload_file(&app_id, dir, &filename, bytes).await?;
+    agent(&state)?
+        .upload_file(&app_id, dir, &filename, bytes)
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true, "dir": dir })))
 }
 
@@ -1863,8 +1990,9 @@ pub async fn delete_plugin(
     auth.scope(cap::SERVICES_CREATE)?;
     let server = access(&state, auth.user_id, &id, server_perm::MANAGE).await?;
     let c = require_container(&server)?;
-    let dir = mc_addon_dir(c.software.as_deref())
-        .ok_or_else(|| AppError::Validation("this server type doesn't support plugins/mods".into()))?;
+    let dir = mc_addon_dir(c.software.as_deref()).ok_or_else(|| {
+        AppError::Validation("this server type doesn't support plugins/mods".into())
+    })?;
     let name = req.name.trim();
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err(AppError::Validation("bad name".into()));
@@ -1921,7 +2049,9 @@ pub async fn set_max_players(
     }
     server.state = ServerState::Provisioning;
     tokio::spawn(provision_minecraft(state.clone(), server.clone(), ram));
-    Ok(Json(serde_json::json!({ "ok": true, "max_players": req.max, "cap": cap })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "max_players": req.max, "cap": cap }),
+    ))
 }
 
 // ----------------------------- backups + world -----------------------------
@@ -1985,7 +2115,9 @@ pub async fn restore_backup(
     if !valid_backup_name(req.name.trim()) {
         return Err(AppError::Validation("bad backup name".into()));
     }
-    agent(&state)?.restore_backup(&app_id, req.name.trim()).await?;
+    agent(&state)?
+        .restore_backup(&app_id, req.name.trim())
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -2002,7 +2134,9 @@ pub async fn delete_backup(
     if !valid_backup_name(req.name.trim()) {
         return Err(AppError::Validation("bad backup name".into()));
     }
-    agent(&state)?.delete_backup(&app_id, req.name.trim()).await?;
+    agent(&state)?
+        .delete_backup(&app_id, req.name.trim())
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -2044,7 +2178,9 @@ pub async fn upload_world(
     if !(low.ends_with(".zip") || low.ends_with(".tar.gz") || low.ends_with(".tgz")) {
         return Err(AppError::Validation("use a .zip or .tar.gz archive".into()));
     }
-    agent(&state)?.upload_world(&app_id, &filename, bytes).await?;
+    agent(&state)?
+        .upload_world(&app_id, &filename, bytes)
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -2070,7 +2206,9 @@ pub async fn import_world_url(
     let url = req.url.trim().to_string();
     let low = url.to_lowercase();
     if !(low.starts_with("http://") || low.starts_with("https://")) {
-        return Err(AppError::Validation("Use um link http(s) de download direto.".into()));
+        return Err(AppError::Validation(
+            "Use um link http(s) de download direto.".into(),
+        ));
     }
     if url.len() > 2048 {
         return Err(AppError::Validation("Link muito longo.".into()));
@@ -2081,7 +2219,10 @@ pub async fn import_world_url(
     state
         .db
         .servers()
-        .update_one(doc! { "_id": sid }, doc! { "$set": { "state": "provisioning" } })
+        .update_one(
+            doc! { "_id": sid },
+            doc! { "$set": { "state": "provisioning" } },
+        )
         .await?;
     let st = state.clone();
     tokio::spawn(async move {
@@ -2147,7 +2288,9 @@ pub async fn upload_icon(
     if !filename.to_lowercase().ends_with(".png") {
         return Err(AppError::Validation("use a .png image".into()));
     }
-    agent(&state)?.upload_icon(&app_id, &filename, bytes).await?;
+    agent(&state)?
+        .upload_icon(&app_id, &filename, bytes)
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -2318,7 +2461,12 @@ pub async fn reprovision_mc(
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| c.version.as_deref().unwrap_or("LATEST"))
             .to_string();
-        (server.id.unwrap(), c.ram_mb.unwrap_or(1024), software, version)
+        (
+            server.id.unwrap(),
+            c.ram_mb.unwrap_or(1024),
+            software,
+            version,
+        )
     };
     state
         .db
@@ -2453,7 +2601,9 @@ pub async fn set_voice(
     let mut set = doc! { "state": "provisioning" };
     if let Some(mu) = req.max_users {
         if !(1..=500).contains(&mu) {
-            return Err(AppError::Validation("max users must be between 1 and 500".into()));
+            return Err(AppError::Validation(
+                "max users must be between 1 and 500".into(),
+            ));
         }
         set.insert("container.max_players", mu);
         if let Some(c) = server.container.as_mut() {
@@ -2465,10 +2615,16 @@ pub async fn set_voice(
         if pw.chars().count() > 60 {
             return Err(AppError::Validation("password too long".into()));
         }
-        let val = if pw.is_empty() { None } else { Some(pw.to_string()) };
+        let val = if pw.is_empty() {
+            None
+        } else {
+            Some(pw.to_string())
+        };
         set.insert(
             "container.voice_password",
-            val.clone().map(bson::Bson::String).unwrap_or(bson::Bson::Null),
+            val.clone()
+                .map(bson::Bson::String)
+                .unwrap_or(bson::Bson::Null),
         );
         if let Some(c) = server.container.as_mut() {
             c.voice_password = val;
@@ -2675,7 +2831,9 @@ pub async fn post_community_chat(
     }
     let text = req.text.trim().to_string();
     if text.is_empty() || text.chars().count() > 500 {
-        return Err(AppError::Validation("message must be 1-500 characters".into()));
+        return Err(AppError::Validation(
+            "message must be 1-500 characters".into(),
+        ));
     }
     // Light per-user anti-flood: at most one message every 700ms.
     {
@@ -2768,10 +2926,13 @@ pub async fn write_file(
     let c = require_container(&server)?;
     if c.github_repo.is_some() {
         return Err(AppError::Validation(
-            "this app is deployed from GitHub — edit the files in the repo (a push auto-redeploys)".into(),
+            "this app is deployed from GitHub — edit the files in the repo (a push auto-redeploys)"
+                .into(),
         ));
     }
-    agent(&state)?.write_file(&c.app_id, &req.path, &req.content).await?;
+    agent(&state)?
+        .write_file(&c.app_id, &req.path, &req.content)
+        .await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -2849,7 +3010,8 @@ pub async fn action(
     let c = require_container(&server)?;
     if c.suspended {
         return Err(AppError::Conflict(
-            "Container suspenso — não é possível iniciar, parar ou reiniciar. Fale com o suporte.".into(),
+            "Container suspenso — não é possível iniciar, parar ou reiniciar. Fale com o suporte."
+                .into(),
         ));
     }
     // The Docker container is only created by a successful deploy. Without one
@@ -2857,8 +3019,7 @@ pub async fn action(
     // "No such container" bubble up to the user.
     if !c.deployed {
         return Err(AppError::Conflict(
-            "Este container ainda não foi criado — envie um deploy do seu código primeiro."
-                .into(),
+            "Este container ainda não foi criado — envie um deploy do seu código primeiro.".into(),
         ));
     }
     agent(&state)?.action(&c.app_id, action).await?;
@@ -2881,7 +3042,11 @@ pub async fn action(
         "container.action",
         serde_json::json!({ "id": id, "action": action, "status": mapped }),
     );
-    Ok((StatusCode::OK, Json(serde_json::json!({ "ok": true, "status": mapped }))).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "ok": true, "status": mapped })),
+    )
+        .into_response())
 }
 
 // ----------------------------- env -----------------------------
@@ -2927,7 +3092,9 @@ pub async fn set_env(
     for (k, v) in obj {
         let valid_key = !k.is_empty()
             && k.len() <= 128
-            && k.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && k.chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
         if !valid_key {
             return Err(AppError::Validation(format!("invalid env key: {k}")));
@@ -2936,11 +3103,13 @@ pub async fn set_env(
             .as_str()
             .ok_or_else(|| AppError::Validation(format!("env {k} must be a string")))?;
         if s.len() > 4096 || s.contains(['\n', '\r', '\0']) {
-            return Err(AppError::Validation(format!("env {k} has invalid characters")));
+            return Err(AppError::Validation(format!(
+                "env {k} has invalid characters"
+            )));
         }
     }
-    let env_doc = bson::to_document(&req.env)
-        .map_err(|_| AppError::Validation("invalid env".into()))?;
+    let env_doc =
+        bson::to_document(&req.env).map_err(|_| AppError::Validation("invalid env".into()))?;
     state
         .db
         .servers()
@@ -2953,7 +3122,9 @@ pub async fn set_env(
     if c.deployed {
         let _ = agent(&state)?.set_env(&c.app_id, req.env).await;
     }
-    Ok(Json(serde_json::json!({ "ok": true, "note": "restart to apply" })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "note": "restart to apply" }),
+    ))
 }
 
 // ----------------------------- delete -----------------------------
@@ -2972,7 +3143,11 @@ pub async fn delete(
         ));
     }
     let was_minecraft = c.mc_port.is_some();
-    let mc_sub = if was_minecraft { c.subdomain.clone() } else { None };
+    let mc_sub = if was_minecraft {
+        c.subdomain.clone()
+    } else {
+        None
+    };
     let _ = agent(&state)?.delete(&c.app_id).await;
     let oid = ObjectId::parse_str(&id).map_err(|_| AppError::NotFound)?;
     state.db.servers().delete_one(doc! { "_id": oid }).await?;

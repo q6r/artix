@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     authn::AuthUser,
-    permissions::cap,
     billing::{self, NewSubscription},
     db::Collections,
     error::{AppError, AppResult},
     models::{Invoice, InvoicePublic, InvoiceStatus, Subscription, SubscriptionPublic},
+    permissions::cap,
     permissions::perm,
     state::AppState,
 };
@@ -193,7 +193,11 @@ pub async fn list_subscriptions(
     Ok(Json(out))
 }
 
-async fn owned_subscription(state: &AppState, auth: &AuthUser, id: &str) -> AppResult<Subscription> {
+async fn owned_subscription(
+    state: &AppState,
+    auth: &AuthUser,
+    id: &str,
+) -> AppResult<Subscription> {
     let oid = ObjectId::parse_str(id).map_err(|_| AppError::NotFound)?;
     state
         .db
@@ -232,7 +236,9 @@ pub async fn cancel_subscription(
     auth.scope(cap::BILLING)?;
     let sub = owned_subscription(&state, &auth, &id).await?;
     billing::cancel_subscription(&state, &sub, req.at_period_end).await?;
-    Ok(Json(serde_json::json!({ "ok": true, "at_period_end": req.at_period_end })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "at_period_end": req.at_period_end }),
+    ))
 }
 
 // ----------------------------- Invoices -----------------------------

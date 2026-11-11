@@ -61,8 +61,14 @@ impl Provider {
     }
     fn credentials(self, cfg: &crate::config::Config) -> (String, String) {
         match self {
-            Provider::Discord => (cfg.discord_client_id.clone(), cfg.discord_client_secret.clone()),
-            Provider::Github => (cfg.github_client_id.clone(), cfg.github_client_secret.clone()),
+            Provider::Discord => (
+                cfg.discord_client_id.clone(),
+                cfg.discord_client_secret.clone(),
+            ),
+            Provider::Github => (
+                cfg.github_client_id.clone(),
+                cfg.github_client_secret.clone(),
+            ),
         }
     }
 }
@@ -109,7 +115,11 @@ pub fn new_nonce() -> String {
 }
 
 pub fn redirect_uri(state: &AppState, provider: Provider) -> String {
-    format!("{}/oauth/{}/callback", state.cfg.public_api_url, provider.as_str())
+    format!(
+        "{}/oauth/{}/callback",
+        state.cfg.public_api_url,
+        provider.as_str()
+    )
 }
 
 /// Build the provider authorize URL the browser is redirected to.
@@ -214,7 +224,10 @@ async fn fetch_user(
                 .and_then(|x| x.as_str())
                 .ok_or(AppError::Unauthorized)?
                 .to_string();
-            let email = v.get("email").and_then(|x| x.as_str()).map(|s| s.to_lowercase());
+            let email = v
+                .get("email")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_lowercase());
             let email_verified = v.get("verified").and_then(|x| x.as_bool()).unwrap_or(false);
             let display_name = v
                 .get("global_name")
@@ -269,7 +282,10 @@ async fn fetch_user(
 
             // GitHub may hide the email on /user; the verified primary lives here.
             let (email, email_verified) = github_primary_email(state, access_token).await;
-            let username = v.get("login").and_then(|x| x.as_str()).map(|s| s.to_string());
+            let username = v
+                .get("login")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
 
             Ok(OAuthUserInfo {
                 provider_user_id: id,
@@ -303,10 +319,15 @@ async fn github_primary_email(state: &AppState, access_token: &str) -> (Option<S
             e.get("primary").and_then(|p| p.as_bool()).unwrap_or(false)
                 && e.get("verified").and_then(|p| p.as_bool()).unwrap_or(false)
         })
-        .or_else(|| arr.iter().find(|e| e.get("verified").and_then(|p| p.as_bool()).unwrap_or(false)));
+        .or_else(|| {
+            arr.iter()
+                .find(|e| e.get("verified").and_then(|p| p.as_bool()).unwrap_or(false))
+        });
     match pick {
         Some(e) => (
-            e.get("email").and_then(|x| x.as_str()).map(|s| s.to_lowercase()),
+            e.get("email")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_lowercase()),
             true,
         ),
         None => (None, false),

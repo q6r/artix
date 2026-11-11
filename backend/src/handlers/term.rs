@@ -139,14 +139,14 @@ async fn bridge(browser: WebSocket, sess: TermSession) {
         Err(_) => return,
     };
     let connector = Connector::Rustls(Arc::new(tls));
-    let (pve, _resp) =
-        match connect_async_tls_with_config(req, None, false, Some(connector)).await {
-            Ok(x) => x,
-            Err(_) => {
-                let _ = browser_tx.send(Message::Close(None)).await;
-                return;
-            }
-        };
+    let (pve, _resp) = match connect_async_tls_with_config(req, None, false, Some(connector)).await
+    {
+        Ok(x) => x,
+        Err(_) => {
+            let _ = browser_tx.send(Message::Close(None)).await;
+            return;
+        }
+    };
     let (mut pve_tx, mut pve_rx) = pve.split();
 
     // In-band auth, then strip the leading "OK" from the first reply.

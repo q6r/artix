@@ -46,7 +46,10 @@ fn resolve_expiry(
     lifetime: Option<bool>,
     expires_at: &Option<String>,
 ) -> AppResult<Option<DateTime<Utc>>> {
-    let date = expires_at.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let date = expires_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     if lifetime.unwrap_or(false) || date.is_none() {
         auth.require(perm::NODES_LIFETIME)?;
         Ok(None)
@@ -90,7 +93,11 @@ pub async fn list_servers(
     let mut owners: HashMap<ObjectId, UserRef> = HashMap::new();
     let ids: Vec<ObjectId> = owner_ids.into_iter().collect();
     if !ids.is_empty() {
-        let mut uc = state.db.users().find(doc! { "_id": { "$in": ids } }).await?;
+        let mut uc = state
+            .db
+            .users()
+            .find(doc! { "_id": { "$in": ids } })
+            .await?;
         while uc.advance().await? {
             let u = uc.deserialize_current()?;
             if let Some(id) = u.id {
@@ -166,14 +173,20 @@ pub async fn create_server(
         .ok_or_else(|| AppError::Validation("unknown plan".into()))?;
     let os = req.os.clone().unwrap_or_else(|| "Ubuntu 24.04".into());
 
-    let template = state.cfg.os_templates.get(&os).copied().unwrap_or(px.template_vmid);
+    let template = state
+        .cfg
+        .os_templates
+        .get(&os)
+        .copied()
+        .unwrap_or(px.template_vmid);
     let storage = crate::storage::pick(&state, specs.disk_gb)
         .await?
         .ok_or_else(|| AppError::Unavailable("sem capacidade de armazenamento".into()))?;
     let vmid = px.next_id().await?;
     let upid = px.clone_template(template, vmid, &name, &storage).await?;
     px.wait_task(&upid).await?;
-    px.set_resources(vmid, specs.vcpu, specs.ram_gb * 1024).await?;
+    px.set_resources(vmid, specs.vcpu, specs.ram_gb * 1024)
+        .await?;
     if let Err(e) = px.resize_disk(vmid, "scsi0", specs.disk_gb).await {
         tracing::warn!(vmid, error = %e, "disk resize failed");
     }
@@ -261,7 +274,11 @@ pub async fn create_server(
         doc! { "action": "server.create", "owner": owner },
     )
     .await;
-    tokio::spawn(crate::frp::provision_tunnel(state.clone(), vmid, created.id));
+    tokio::spawn(crate::frp::provision_tunnel(
+        state.clone(),
+        vmid,
+        created.id,
+    ));
     Ok(Json(created.public()))
 }
 
@@ -365,7 +382,9 @@ pub async fn update_server(
             bson::to_bson(&specs).map_err(|_| AppError::Internal("specs encode".into()))?,
         );
         if let (Some(px), Some(vmid)) = (state.proxmox.as_ref(), server.vmid) {
-            let _ = px.set_resources(vmid, specs.vcpu, specs.ram_gb * 1024).await;
+            let _ = px
+                .set_resources(vmid, specs.vcpu, specs.ram_gb * 1024)
+                .await;
             if let Some(d) = grow_disk {
                 let _ = px.resize_disk(vmid, "scsi0", d).await;
             }
@@ -376,7 +395,12 @@ pub async fn update_server(
     if req.lifetime == Some(true) {
         auth.require(perm::NODES_LIFETIME)?;
         set.insert("expires_at", Bson::Null);
-    } else if let Some(s) = req.expires_at.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    } else if let Some(s) = req
+        .expires_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         set.insert("expires_at", bson::DateTime::from_chrono(parse_expiry(s)?));
     }
 
@@ -396,7 +420,8 @@ pub async fn update_server(
             .frp
             .as_ref()
             .ok_or_else(|| AppError::Unavailable("relays not configured".into()))?;
-        frp.reassign(&state, oid, req.relay.as_deref(), req.ssh_port).await?;
+        frp.reassign(&state, oid, req.relay.as_deref(), req.ssh_port)
+            .await?;
     }
 
     security::audit(
@@ -509,7 +534,12 @@ async fn notify_owner(
     if !req.notify {
         return false;
     }
-    let Ok(Some(user)) = state.db.users().find_one(doc! { "_id": server.user_id }).await else {
+    let Ok(Some(user)) = state
+        .db
+        .users()
+        .find_one(doc! { "_id": server.user_id })
+        .await
+    else {
         return false;
     };
     if req.custom {
